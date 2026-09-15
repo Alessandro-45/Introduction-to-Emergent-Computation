@@ -1,0 +1,3 @@
+neurona,los pesos coinciden con,w · x(X),w · x(O)
+X,anti-plantilla de la O (−O),17.0,-25.0
+O,anti-plantilla de la X (−X),-25.0,17.0

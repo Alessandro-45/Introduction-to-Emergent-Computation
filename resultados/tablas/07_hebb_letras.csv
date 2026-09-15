@@ -1,0 +1,3 @@
+neurona,w = (plantilla propia − plantilla rival),w·x(X),w·x(O)
+X,True,42.0,-42.0
+O,True,-42.0,42.0

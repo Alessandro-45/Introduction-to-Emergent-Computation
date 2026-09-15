@@ -1,0 +1,5 @@
+codificacion,compuerta,w0,w1,w2,exactitud,patrones_mal
+binaria,AND,-2.0,0.0,0.0,0.75,1
+binaria,OR,2.0,2.0,2.0,0.75,1
+bipolar,AND,-2.0,2.0,2.0,1.0,0
+bipolar,OR,2.0,2.0,2.0,1.0,0

@@ -1,0 +1,6 @@
+# Unicas dependencias del proyecto: algebra, tablas y graficos.
+# No se usa ninguna libreria de aprendizaje automatico: todos los modelos
+# neuronales, reglas de aprendizaje y metricas estan implementados desde cero.
+numpy>=1.24
+pandas>=2.0
+matplotlib>=3.7

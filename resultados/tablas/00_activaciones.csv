@@ -1,0 +1,8 @@
+activacion,minimo,maximo,valores distintos,derivable,|dphi analitica - numerica|
+escalon,0.0,1.0,2,no,no derivable
+escalon_bipolar,-1.0,1.0,2,no,no derivable
+escalon_bipolar_zona,-1.0,1.0,3,no,no derivable
+identidad,-4.0,4.0,2001,si,1.40e-10
+sigmoide,0.017986209962091555,0.9820137900379085,2001,si,1.27e-10
+sigmoide_bipolar,-0.9640275800758169,0.9640275800758169,2001,si,8.00e-11
+gaussiana,0.028565500784550377,1.0,1001,si,1.14e-10

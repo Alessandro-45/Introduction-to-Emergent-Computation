@@ -1,0 +1,5 @@
+codificacion,compuerta,epocas,correcciones,exactitud
+binaria,AND,6,11,1.0
+binaria,OR,4,5,1.0
+bipolar,AND,2,1,1.0
+bipolar,OR,2,3,1.0

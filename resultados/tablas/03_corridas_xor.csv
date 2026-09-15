@@ -1,0 +1,10 @@
+a,inicializacion,convergio,epocas,correcciones,exactitud_final,exactitud_maxima
+0.2,ceros,no,200,800,0.5,0.5
+0.2,aleatoria (semilla 1),no,200,797,0.25,0.5
+0.2,aleatoria (semilla 2),no,200,798,0.25,0.25
+0.5,ceros,no,200,800,0.5,0.5
+0.5,aleatoria (semilla 1),no,200,798,0.5,0.5
+0.5,aleatoria (semilla 2),no,200,798,0.5,0.5
+1.0,ceros,no,200,800,0.5,0.5
+1.0,aleatoria (semilla 1),no,200,799,0.75,0.75
+1.0,aleatoria (semilla 2),no,200,798,0.5,0.5

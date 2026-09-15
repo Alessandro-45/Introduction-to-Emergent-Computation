@@ -1,0 +1,4 @@
+compuerta,mejor_exactitud,patrones_resueltos,w0,w1,w2
+AND,1.0,4 de 4,-3.0,0.15,3.0
+OR,1.0,4 de 4,0.0,0.15,0.15
+XOR,0.75,3 de 4,-3.0,-3.0,0.15

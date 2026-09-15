@@ -1,0 +1,4 @@
+compuerta,pesos,umbral,salidas
+NOT,[-1.],0.0,10
+NAND,[-1. -1.],-1.0,1110
+NOR,[-1. -1.],0.0,1000

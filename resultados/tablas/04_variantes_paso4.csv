@@ -1,0 +1,3 @@
+variante,epocas,correcciones,convergio,exactitud
+estandar: corregir solo la que falla,2,2,si,1.0
+literal: corregir todas las salidas,2,1,si,1.0
