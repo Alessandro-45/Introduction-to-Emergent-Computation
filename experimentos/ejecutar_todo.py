@@ -27,6 +27,9 @@ EXPERIMENTOS = [
     ("exp05_adaline_decodificador", "ADALINE: descodificador binario-decimal"),
     ("exp06_perceptron_vs_adaline", "Perceptron frente a ADALINE"),
     ("exp07_hebb", "Regla de Hebb"),
+    ("exp08_mlp_xor_aproximacion", "Perceptron Multicapa: XOR y aproximacion"),
+    ("exp09_kohonen_clustering", "Mapas de Kohonen: clustering no supervisado"),
+    ("exp10_hopfield_imagenes", "Red de Hopfield: memoria asociativa e imagenes 7x6"),
 ]
 
 

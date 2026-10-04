@@ -706,3 +706,323 @@ def tabla_a_figura(df, titulo: str = "", figsize=None, resaltar=None):
             celda.set_facecolor("#f7f9fc")
     ax.set_title(titulo, pad=16)
     return fig, ax
+
+
+def frontera_decision_no_lineal(
+    modelo,
+    X,
+    d,
+    titulo: str = "",
+    etiquetas_ejes=("x1", "x2"),
+    etiquetas_clases=("clase 1", "clase 0"),
+    umbral: float = 0.5,
+    margen: float = 0.6,
+    ax=None,
+    figsize=(6.2, 5.2),
+):
+    """Dibuja patrones y la frontera de decision no lineal generada por un MLP.
+
+    El mapa de fondo representa la salida continua de la red (probabilidad /
+    activacion), y la linea continua representa la isolinea de decision en el
+    umbral especificado (usualmente 0.5 para sigmoide).
+    """
+    estilo()
+    creada = ax is None
+    if creada:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
+
+    X = np.asarray(X, dtype=float)
+    d = np.asarray(d, dtype=float).ravel()
+
+    x_min, x_max = X[:, 0].min() - margen, X[:, 0].max() + margen
+    y_min, y_max = X[:, 1].min() - margen, X[:, 1].max() + margen
+
+    gx, gy = np.meshgrid(np.linspace(x_min, x_max, 250), np.linspace(y_min, y_max, 250))
+    rejilla = np.column_stack([gx.ravel(), gy.ravel()])
+
+    z = np.asarray(modelo.predecir(rejilla), dtype=float).reshape(gx.shape)
+
+    # Fondo degradado de la salida continua
+    cf = ax.contourf(gx, gy, z, levels=np.linspace(0.0, 1.0, 21), cmap="RdYlBu_r", alpha=0.35, zorder=0)
+    cbar = fig.colorbar(cf, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Salida continua y(x)", fontsize=9, color=TINTA_2)
+
+    # Frontera no lineal de decision en el umbral
+    cs = ax.contour(gx, gy, z, levels=[umbral], colors=[TINTA], linewidths=2.4, zorder=3)
+    ax.clabel(cs, inline=True, fmt=f"y={umbral:g}", fontsize=8)
+
+    # Dispersar patrones
+    _dibujar_patrones(ax, X, d, etiquetas=etiquetas_clases)
+
+    for x_i, y_i, d_i in zip(X[:, 0], X[:, 1], d):
+        ax.annotate(
+            f"({x_i:g}, {y_i:g})\n→ {d_i:g}",
+            (x_i, y_i),
+            xytext=(0, 14),
+            textcoords="offset points",
+            ha="center",
+            fontsize=8,
+            color=TINTA,
+            bbox=dict(boxstyle="round,pad=0.2", facecolor=SUPERFICIE, edgecolor=GRIS, alpha=0.9),
+            zorder=5,
+        )
+
+    ax.set_xlabel(etiquetas_ejes[0])
+    ax.set_ylabel(etiquetas_ejes[1])
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    ax.set_title(titulo)
+    ax.legend(loc="upper right", framealpha=0.9)
+
+    return fig, ax
+
+
+def dibujar_malla_som(
+    som,
+    X: np.ndarray,
+    d: np.ndarray | None = None,
+    titulo: str = "Malla del Mapa de Kohonen en el espacio de entrada",
+    ax=None,
+    figsize=(7.2, 5.8),
+):
+    """Visualiza la reticula neuronal del SOM superpuesta sobre los datos de entrada."""
+    estilo()
+    creada = ax is None
+    if creada:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
+
+    X = np.asarray(X, dtype=float)
+
+    # Dispersar datos originales
+    if d is not None:
+        d = np.asarray(d).ravel()
+        clases = sorted(np.unique(d))
+        colores_puntos = [AZUL, NARANJA, AQUA, VIOLETA, "#d9381e", "#5a738e"]
+        marcadores = ["o", "s", "^", "D", "v", "p"]
+        for idx, k in enumerate(clases):
+            mascara = d == k
+            ax.scatter(
+                X[mascara, 0], X[mascara, 1],
+                color=colores_puntos[idx % len(colores_puntos)],
+                marker=marcadores[idx % len(marcadores)],
+                alpha=0.45, s=36, edgecolors="none",
+                label=f"Cluster {int(k)}",
+            )
+    else:
+        ax.scatter(X[:, 0], X[:, 1], color=GRIS, alpha=0.5, s=28, label="Patrones de entrada")
+
+    # Dibujar lineas de la reticula
+    W = som.W  # (filas, columnas, 2)
+    filas, columnas = som.filas, som.columnas
+
+    # Conectar horizontales (mismo r, c variable)
+    for r in range(filas):
+        ax.plot(W[r, :, 0], W[r, :, 1], color=TINTA, lw=1.4, alpha=0.85, zorder=3)
+
+    # Conectar verticales (mismo c, r variable)
+    for c in range(columnas):
+        ax.plot(W[:, c, 0], W[:, c, 1], color=TINTA, lw=1.4, alpha=0.85, zorder=3)
+
+    # Dibujar nodos de la red
+    ax.scatter(
+        W[..., 0].ravel(), W[..., 1].ravel(),
+        color="#ffffff", edgecolor=TINTA, s=64, linewidths=1.6, zorder=4,
+        label=f"Neuronas SOM ({filas}x{columnas})",
+    )
+
+    ax.set_xlabel("x1")
+    ax.set_ylabel("x2")
+    ax.set_title(titulo)
+    ax.legend(loc="upper right", framealpha=0.9, fontsize=8.5)
+
+    return fig, ax
+
+
+def dibujar_umatrix(
+    som,
+    titulo: str = "Matriz U (Unified Distance Matrix) del SOM",
+    ax=None,
+    figsize=(6.4, 5.2),
+):
+    """Dibuja el mapa de calor de distancias entre neuronas contiguas (Matriz U)."""
+    estilo()
+    creada = ax is None
+    if creada:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
+
+    U = som.matriz_u()
+
+    im = ax.imshow(U, cmap="viridis", origin="lower", interpolation="nearest")
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Distancia media a vecinos (Matriz U)", fontsize=9, color=TINTA_2)
+
+    # Marcar coordenadas de la reticula
+    ax.set_xticks(range(som.columnas))
+    ax.set_yticks(range(som.filas))
+    ax.set_xlabel("Columna en reticula")
+    ax.set_ylabel("Fila en reticula")
+    ax.set_title(titulo)
+
+    # Anotar valores en cada celda
+    for r in range(som.filas):
+        for c in range(som.columnas):
+            val = U[r, c]
+            color_txt = "black" if val > np.mean(U) else "white"
+            ax.text(c, r, f"{val:.2f}", ha="center", va="center", fontsize=8, color=color_txt)
+
+    return fig, ax
+
+
+def dibujar_proyeccion_som(
+    som,
+    X: np.ndarray,
+    d: np.ndarray,
+    titulo: str = "Asignacion de clusters proyectados en la reticula SOM",
+    ax=None,
+    figsize=(6.4, 5.2),
+):
+    """Muestra la distribucion de los grupos reales proyectados sobre cada neurona del mapa."""
+    estilo()
+    creada = ax is None
+    if creada:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
+
+    composicion = som.composicion_clusters(X, d)
+    clases = sorted(np.unique(d))
+    colores_clusters = {
+        0: AZUL,
+        1: NARANJA,
+        2: AQUA,
+        3: VIOLETA,
+    }
+
+    # Fondo de celdas
+    ax.set_xlim(-0.5, som.columnas - 0.5)
+    ax.set_ylim(-0.5, som.filas - 0.5)
+    ax.set_xticks(range(som.columnas))
+    ax.set_yticks(range(som.filas))
+    ax.set_xlabel("Columna en reticula")
+    ax.set_ylabel("Fila en reticula")
+
+    for r in range(som.filas):
+        for c in range(som.columnas):
+            ax.add_patch(
+                Rectangle((c - 0.5, r - 0.5), 1, 1, facecolor="#f8f8f7", edgecolor=GRIS, lw=0.8, zorder=0)
+            )
+
+    for (r, c), conteos in composicion.items():
+        total = sum(conteos.values())
+        cluster_dominante = max(conteos.keys(), key=lambda k: conteos[k])
+        color = colores_clusters.get(int(cluster_dominante), "#888888")
+
+        # Tamano proporcional a la cantidad de activaciones
+        radio = 0.12 + 0.28 * min(total / 25.0, 1.0)
+        circulo = Circle((c, r), radio, facecolor=color, edgecolor=TINTA, lw=1.2, zorder=3, alpha=0.85)
+        ax.add_patch(circulo)
+        ax.text(c, r, f"{total}\n(C{int(cluster_dominante)})", ha="center", va="center", fontsize=7.5, fontweight="bold", color="white", zorder=4)
+
+    ax.set_title(titulo)
+    return fig, ax
+
+
+def rejilla_patrones_hopfield(
+    patrones: list[np.ndarray],
+    titulos: list[str],
+    forma: tuple[int, int] = (7, 6),
+    n_columnas: int = 4,
+    sup_titulo: str = "",
+    figsize=None,
+):
+    """Muestra una cuadricula de patrones binarios/bipolares (7x6)."""
+    estilo()
+    n = len(patrones)
+    n_filas = int(np.ceil(n / n_columnas))
+    if figsize is None:
+        figsize = (2.2 * n_columnas, 2.6 * n_filas + (0.6 if sup_titulo else 0.0))
+
+    fig, ejes = plt.subplots(n_filas, n_columnas, figsize=figsize, squeeze=False)
+    for idx, (patron, titulo) in enumerate(zip(patrones, titulos)):
+        r, c = idx // n_columnas, idx % n_columnas
+        ax = ejes[r, c]
+        mat = np.asarray(patron, dtype=float).reshape(forma)
+        ax.imshow(mat, cmap="Blues", origin="upper", vmin=-1.0, vmax=1.0)
+        ax.set_title(titulo, fontsize=9.5, fontweight="bold")
+        ax.set_xticks(np.arange(-0.5, forma[1], 1), minor=True)
+        ax.set_yticks(np.arange(-0.5, forma[0], 1), minor=True)
+        ax.grid(which="minor", color=GRIS, linestyle="-", linewidth=0.8)
+        ax.tick_params(which="both", bottom=False, left=False, labelbottom=False, labelleft=False)
+
+    # Ocultar celdas sobrantes
+    for idx in range(n, n_filas * n_columnas):
+        r, c = idx // n_columnas, idx % n_columnas
+        ejes[r, c].axis("off")
+
+    if sup_titulo:
+        fig.suptitle(sup_titulo, fontsize=11, fontweight="bold")
+    fig.tight_layout()
+    return fig, ejes
+
+
+def comparar_recuperacion_hopfield(
+    originales: list[np.ndarray],
+    contaminados: list[np.ndarray],
+    recuperados: list[np.ndarray],
+    titulos: list[str],
+    forma: tuple[int, int] = (7, 6),
+    sup_titulo: str = "Recuperacion de patrones con Red de Hopfield",
+    figsize=(9.0, 6.8),
+):
+    """Panel de 3 filas: Originales, Contaminados con Ruido, y Recuperados por Hopfield."""
+    estilo()
+    P = len(originales)
+    fig, ejes = plt.subplots(3, P, figsize=figsize, squeeze=False)
+
+    nombres_filas = ["1. Originales", "2. Con Ruido", "3. Recuperadas"]
+
+    for col in range(P):
+        for fila, coleccion in enumerate([originales, contaminados, recuperados]):
+            ax = ejes[fila, col]
+            mat = np.asarray(coleccion[col], dtype=float).reshape(forma)
+            ax.imshow(mat, cmap="Blues", origin="upper", vmin=-1.0, vmax=1.0)
+            ax.set_xticks(np.arange(-0.5, forma[1], 1), minor=True)
+            ax.set_yticks(np.arange(-0.5, forma[0], 1), minor=True)
+            ax.grid(which="minor", color=GRIS, linestyle="-", linewidth=0.8)
+            ax.tick_params(which="both", bottom=False, left=False, labelbottom=False, labelleft=False)
+
+            if fila == 0:
+                ax.set_title(titulos[col], fontsize=10, fontweight="bold")
+            if col == 0:
+                ax.set_ylabel(nombres_filas[fila], fontsize=9.5, fontweight="bold", color=TINTA)
+
+    if sup_titulo:
+        fig.suptitle(sup_titulo, fontsize=11.5, fontweight="bold", y=0.98)
+    fig.tight_layout()
+    return fig, ejes
+
+
+def curva_energia_hopfield(
+    historias: list[tuple[str, list[float]]],
+    titulo: str = "Evolucion de la funcion de energia de Lyapunov E(s)",
+    figsize=(7.2, 4.4),
+):
+    """Grafica el descenso monotono de la funcion de energia de Lyapunov durante la recuperacion."""
+    estilo()
+    fig, ax = plt.subplots(figsize=figsize)
+    colores = [AZUL, NARANJA, AQUA, VIOLETA]
+
+    for (etiqueta, energia), col in zip(historias, colores):
+        ax.plot(energia, marker="o", markersize=4, lw=1.8, label=etiqueta, color=col)
+
+    ax.set_xlabel("Paso de actualizacion (ciclo)")
+    ax.set_ylabel("Energia de Lyapunov E(s)")
+    ax.set_title(titulo)
+    ax.legend(fontsize=8.5)
+    return fig, ax

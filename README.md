@@ -26,14 +26,15 @@ python3 pruebas/pruebas.py                # 29 pruebas, sin dependencias externa
 | **Regla de Hebb** | 1949 | Aprendizaje de **una sola pasada** por correlacion | [`hebb.py`](ce_rna/hebb.py) | [doc 04](docs/04_regla_hebb.md) |
 | **Perceptron simple** | 1958 | Primera red **que aprende**; regla de correccion de error con teorema de convergencia | [`perceptron.py`](ce_rna/perceptron.py) | [doc 02](docs/02_perceptron_simple.md) |
 | **ADALINE** | 1960 | Salida **real**; regla Delta = descenso del gradiente sobre el error cuadratico medio | [`adaline.py`](ce_rna/adaline.py) | [doc 03](docs/03_adaline.md) |
+| **Perceptron Multicapa (MLP)** | 1986 | Capas ocultas no lineales; **Backpropagation** para XOR y aproximacion universal | [`mlp.py`](ce_rna/mlp.py) | [doc 06](docs/06_perceptron_multicapa.md) |
+| **Mapas de Kohonen (SOM)** | 1982 | Aprendizaje **no supervisado**; proyeccion topologica y clustering en el plano | [`kohonen.py`](ce_rna/kohonen.py) | [doc 07](docs/07_mapas_kohonen.md) |
+| **Red de Hopfield** | 1982 | **Memoria asociativa recurrente**; recuperacion y reconocimiento de imagenes con ruido | [`hopfield.py`](ce_rna/hopfield.py) | [doc 08](docs/08_red_hopfield.md) |
 
-Los cuatro comparten la misma arquitectura unicapa; lo unico que cambia entre ellos es
-**como se calcula `Δw`**, y de ahi salen todas las diferencias de comportamiento que
-los experimentos miden.
+Los modelos cubren desde neuronas de umbral fijas y redes supervisadas feedforward hasta proyecciones no supervisadas y memorias asociativas recurrentes de Lyapunov.
 
 ---
 
-## Los ocho experimentos
+## Los once experimentos
 
 Cada experimento es un script ejecutable que produce figuras, tablas CSV y un informe
 en Markdown **generado automaticamente** a partir de la misma ejecucion que produce
@@ -49,6 +50,9 @@ los numeros.
 | 05 | ADALINE: descodificador binario-decimal | ¿Puede aproximar una funcion de salida real? | [ver](resultados/reportes/05_adaline_decodificador.md) |
 | 06 | Perceptron frente a ADALINE | ¿Que gana y que pierde cada uno? | [ver](resultados/reportes/06_perceptron_vs_adaline.md) |
 | 07 | Regla de Hebb | ¿Hasta donde llega el aprendizaje de una sola pasada? | [ver](resultados/reportes/07_regla_hebb.md) |
+| 08 | Perceptron Multicapa (MLP) | ¿Como resuelve el XOR y aproxima funciones continuas? | [ver](resultados/reportes/08_mlp_xor_aproximacion.md) |
+| 09 | Mapas de Kohonen (SOM) | ¿Como se autoorganizan los clusters sin clases previas? | [ver](resultados/reportes/09_kohonen_clustering.md) |
+| 10 | Red de Hopfield | ¿Como recupera imagenes de 7x6 ante el ruido? | [ver](resultados/reportes/10_hopfield_imagenes.md) |
 
 ---
 
@@ -151,6 +155,9 @@ resultados/        Figuras, tablas CSV e informes generados
 - [03 --- ADALINE y la regla Delta](docs/03_adaline.md)
 - [04 --- La regla de Hebb](docs/04_regla_hebb.md)
 - [05 --- Guia de uso y referencia de la API](docs/05_guia_de_uso.md)
+- [06 --- Perceptron Multicapa y Backpropagation](docs/06_perceptron_multicapa.md)
+- [07 --- Mapas Autoorganizados de Kohonen (SOM)](docs/07_mapas_kohonen.md)
+- [08 --- Red de Hopfield y Reconocimiento de Imagenes](docs/08_red_hopfield.md)
 
 ---
 
@@ -160,6 +167,9 @@ resultados/        Figuras, tablas CSV e informes generados
 from ce_rna import datasets as ds
 from ce_rna.perceptron import PerceptronSimple
 from ce_rna.adaline import Adaline
+from ce_rna.mlp import PerceptronMulticapa
+from ce_rna.kohonen import MapaAutoorganizado
+from ce_rna.hopfield import RedHopfield, contaminar_patron
 
 # Perceptron sobre la compuerta AND
 conjunto = ds.compuerta("AND", "bipolar")
@@ -172,6 +182,25 @@ conjunto = ds.decodificador_binario(3)
 red = Adaline(3, razon_aprendizaje=0.05, max_epocas=1000, tolerancia=1e-9)
 red.entrenar(conjunto.X, conjunto.d)
 print(red.w)                             # ~ [0. 4. 2. 1.]
+
+# Perceptron Multicapa sobre XOR (2-2-1)
+conjunto_xor = ds.compuerta("XOR", "binaria")
+mlp = PerceptronMulticapa((2, 2, 1), razon_aprendizaje=1.0, momento=0.5)
+mlp.entrenar(conjunto_xor.X, conjunto_xor.d)
+print(mlp.clasificar(conjunto_xor.X))    # [0. 1. 1. 0.]
+
+# Mapa de Kohonen (SOM) sobre distribucion de clusters 2D (no supervisado)
+puntos = ds.distribucion_clusters_2d(n_por_cluster=50)
+som = MapaAutoorganizado(forma_mapa=(6, 6), max_epocas=200)
+som.entrenar(puntos.X)
+print("Error de cuantizacion:", som.error_cuantizacion(puntos.X))
+
+# Red de Hopfield sobre letras A, B, C, D (7x6 pixeles, memoria asociativa)
+letras = ds.letras_hopfield_7x6()
+hop = RedHopfield(n_neuronas=42, regla="proyeccion").almacenar(letras.X, ["A", "B", "C", "D"])
+ruidoso = contaminar_patron(letras.X[0], n_pixeles=6)
+recuperado, energia, conv = hop.recuperar(ruidoso)
+print("Letra recuperada con exito:", np.array_equal(recuperado, letras.X[0]))
 ```
 
 ---
@@ -188,10 +217,16 @@ La bateria de [`pruebas/pruebas.py`](pruebas/pruebas.py) comprueba propiedades
 - la regla Delta alcanza la solucion exacta de minimos cuadrados;
 - el gradiente implementado coincide con la derivada numerica del error (`1e-6`);
 - las derivadas de las activaciones coinciden con sus diferencias finitas;
-- la regla de Hebb falla en el AND binario y funciona en el bipolar.
+- la regla de Hebb falla en el AND binario y funciona en el bipolar;
+- el gradiente de Backpropagation en el MLP coincide con la derivada numerica a `1e-12`;
+- el MLP 2-2-1 resuelve exactamente el XOR con 100 % de exactitud;
+- el MLP 1-8-1 aproxima funciones continuas no lineales con $R^2 > 0.95$;
+- el SOM reduce el error de cuantizacion y agrupa clusters continuos con 100 % de pureza;
+- la Red de Hopfield recupera los 4 patrones de 7x6 como puntos fijos exactos, reduce
+  la energia de Lyapunov y tolera ruido aleatorio en imagenes PNG.
 
 ```
-29 de 29 pruebas superadas
+42 de 42 pruebas superadas
 ```
 
 ---

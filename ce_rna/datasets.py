@@ -232,6 +232,71 @@ def contaminar(patron: np.ndarray, n_pixeles: int, semilla: int = 0) -> np.ndarr
 
 
 # ---------------------------------------------------------------------------
+# Patrones de 7x6 pixeles (42 elementos) para Red de Hopfield (Actividad 5)
+# ---------------------------------------------------------------------------
+
+_PLANTILLAS_7X6 = {
+    "A": [
+        ".####.",
+        "#....#",
+        "#....#",
+        "######",
+        "#....#",
+        "#....#",
+        "#....#",
+    ],
+    "B": [
+        "#####.",
+        "#....#",
+        "#....#",
+        "#####.",
+        "#....#",
+        "#....#",
+        "#####.",
+    ],
+    "C": [
+        ".#####",
+        "#.....",
+        "#.....",
+        "#.....",
+        "#.....",
+        "#.....",
+        ".#####",
+    ],
+    "D": [
+        "####..",
+        "#...#.",
+        "#....#",
+        "#....#",
+        "#....#",
+        "#...#.",
+        "####..",
+    ],
+}
+
+
+def letra_7x6(nombre: str) -> np.ndarray:
+    """Devuelve la retina bipolar (42,) de la letra 'A', 'B', 'C' o 'D'."""
+    nombre = nombre.upper()
+    if nombre not in _PLANTILLAS_7X6:
+        raise KeyError(f"Letra 7x6 desconocida '{nombre}'. Disponibles: {list(_PLANTILLAS_7X6)}")
+    return _plantilla_a_vector(_PLANTILLAS_7X6[nombre])
+
+
+def letras_hopfield_7x6() -> Conjunto:
+    """Conjunto de las 4 imagenes binarias de 7x6 pixeles (A, B, C, D) para Hopfield."""
+    patrones = [letra_7x6(let) for let in ("A", "B", "C", "D")]
+    return Conjunto(
+        X=np.array(patrones),
+        d=np.arange(4, dtype=float),
+        nombre="Letras 7x6 (A, B, C, D) para Hopfield",
+        nombres_entradas=[f"p{i}" for i in range(42)],
+        nombres_salidas=["letra_id"],
+        descripcion="Cuatro patrones bipolares de 42 pixeles (7 filas x 6 columnas) de letras A, B, C y D.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Descodificador binario -> decimal  (ICE-claseRN04.md)
 # ---------------------------------------------------------------------------
 
@@ -325,4 +390,60 @@ def nubes_separables(
         nombres_entradas=["x1", "x2"],
         nombres_salidas=["clase"],
         descripcion="Dos nubes gaussianas separables por una recta; infinitas soluciones.",
+    )
+
+
+def distribucion_clusters_2d(
+    n_por_cluster: int = 75,
+    centros: Sequence[tuple[float, float]] | None = None,
+    dispersion: float = 0.35,
+    semilla: int = 42,
+) -> Conjunto:
+    """Genera una distribucion de puntos en el plano 2D que conforma clusters bien definidos.
+
+    Disenado especificamente para la Actividad 4 (Mapas Autoorganizados de Kohonen):
+    "analizar una distribucion de puntos en el plano que conforme diferentes grupos o clusters.
+    La red debera identificar la organizacion de los datos sin proporcionar previamente las clases".
+
+    Parameters
+    ----------
+    n_por_cluster:
+        Numero de patrones por cada grupo.
+    centros:
+        Coordenadas (x, y) de los centros de los clusters. Por omision son 4 cuadrantes.
+    dispersion:
+        Desviacion estandar de cada nube gaussiana.
+    semilla:
+        Semilla para el generador aleatorio.
+    """
+    rng = np.random.default_rng(semilla)
+    if centros is None:
+        centros = [
+            (2.0, 2.0),    # Grupo 0: Cuadrante I
+            (-2.0, 2.0),   # Grupo 1: Cuadrante II
+            (-2.0, -2.0),  # Grupo 2: Cuadrante III
+            (2.0, -2.0),   # Grupo 3: Cuadrante IV
+        ]
+
+    puntos = []
+    etiquetas = []
+
+    for k, (cx, cy) in enumerate(centros):
+        cluster_k = rng.normal(loc=[cx, cy], scale=dispersion, size=(n_por_cluster, 2))
+        puntos.append(cluster_k)
+        etiquetas.append(np.full(n_por_cluster, k, dtype=float))
+
+    X = np.vstack(puntos)
+    d = np.concatenate(etiquetas)
+
+    return Conjunto(
+        X=X,
+        d=d,
+        nombre=f"Distribucion de {len(centros)} clusters en el plano",
+        nombres_entradas=["x1", "x2"],
+        nombres_salidas=["cluster_real"],
+        descripcion=(
+            f"Distribucion 2D con {len(centros)} grupos gaussianos centrados en {centros}, "
+            "con un total de {len(X)} puntos."
+        ),
     )

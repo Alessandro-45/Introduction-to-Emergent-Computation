@@ -31,8 +31,8 @@ Correspondencia con las clases
 | `ICE-claseRN04.md`    | ADALINE y regla Delta              | `adaline`         |
 """
 
-from . import (activaciones, adaline, datasets, hebb, mcculloch_pitts, metricas,
-               perceptron, reportes, visual)
+from . import (activaciones, adaline, datasets, hebb, hopfield, kohonen,
+               mcculloch_pitts, metricas, mlp, perceptron, reportes, visual)
 
 __version__ = "1.0.0"
 __all__ = [
@@ -40,8 +40,11 @@ __all__ = [
     "adaline",
     "datasets",
     "hebb",
+    "hopfield",
+    "kohonen",
     "mcculloch_pitts",
     "metricas",
+    "mlp",
     "perceptron",
     "reportes",
     "visual",

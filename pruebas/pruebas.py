@@ -32,9 +32,13 @@ from ce_rna import datasets as ds
 from ce_rna import metricas as mt
 from ce_rna.adaline import (Adaline, ecm_de_pesos, solucion_minimos_cuadrados)
 from ce_rna.hebb import RedHebb
+from ce_rna.hopfield import (RedHopfield, cargar_imagen_png, contaminar_patron,
+                                guardar_imagen_png)
+from ce_rna.kohonen import MapaAutoorganizado
 from ce_rna.mcculloch_pitts import (NeuronaMCP, neurona_and, neurona_nand,
                                     neurona_nor, neurona_not, neurona_or,
                                     red_xor)
+from ce_rna.mlp import PerceptronMulticapa
 from ce_rna.perceptron import PerceptronSimple
 
 
@@ -291,6 +295,227 @@ def probar_conjunto_valida_longitudes():
     except ValueError:
         return
     raise AssertionError("se acepto un conjunto con X y d de distinta longitud")
+
+
+# ---------------------------------------------------------------------------
+# Perceptron Multicapa y Backpropagation
+# ---------------------------------------------------------------------------
+
+def probar_mlp_gradiente_coincide_con_derivada_numerica():
+    """El gradiente analitico de retropropagacion coincide con la derivada numerica."""
+    red = PerceptronMulticapa((2, 3, 1), activacion_oculta="sigmoide", activacion_salida="sigmoide", semilla=7)
+    X = np.array([[0.2, 0.8], [0.5, 0.1], [0.9, 0.4]])
+    d = np.array([0.7, 0.3, 0.9])
+    eps = 1e-6
+
+    W = red.pesos[0]
+    w_orig = W[0, 1]
+    W[0, 1] = w_orig + eps
+    e_pos = red.calcular_ecm(X, d)
+    W[0, 1] = w_orig - eps
+    e_neg = red.calcular_ecm(X, d)
+    W[0, 1] = w_orig
+    grad_num = (e_pos - e_neg) / (2 * eps)
+
+    acts, pots = red.propagar_lote(X)
+    deriv_out = red.act_salida.derivada(pots[-1])
+    delta_out = (d.reshape(-1, 1) - acts[-1]) * deriv_out
+    deriv_hid = red.act_oculta.derivada(pots[1])
+    delta_hid = (delta_out @ red.pesos[1]) * deriv_hid
+    grad_ana = -(1.0 / len(X)) * (delta_hid.T @ acts[0])[0, 1]
+
+    assert np.isclose(grad_num, grad_ana, atol=1e-5), f"Num: {grad_num}, Ana: {grad_ana}"
+
+
+def probar_mlp_resuelve_xor():
+    """MLP 2-2-1 resuelve exactamente el XOR (exactitud 1.0 y ECM < 0.01)."""
+    conjunto = ds.compuerta("XOR", "binaria")
+    red = PerceptronMulticapa(
+        arquitectura=(2, 2, 1),
+        razon_aprendizaje=1.0,
+        momento=0.5,
+        max_epocas=2500,
+        tolerancia=1e-4,
+        semilla=42,
+    )
+    red.entrenar(conjunto.X, conjunto.d)
+    preds = red.clasificar(conjunto.X)
+    assert np.array_equal(preds, conjunto.d)
+    assert red.calcular_ecm(conjunto.X, conjunto.d) < 0.01
+
+
+def probar_mlp_aproxima_funcion():
+    """MLP 1-8-1 con salida lineal aproxima una funcion continua con R2 > 0.95."""
+    X = np.linspace(-np.pi, np.pi, 60).reshape(-1, 1)
+    d = np.sin(X).ravel()
+    red = PerceptronMulticapa(
+        arquitectura=(1, 8, 1),
+        activacion_oculta="sigmoide",
+        activacion_salida="identidad",
+        razon_aprendizaje=0.08,
+        momento=0.7,
+        modo="lote",
+        max_epocas=3000,
+        tolerancia=1e-5,
+        semilla=42,
+    )
+    red.entrenar(X, d)
+    preds = red.predecir(X)
+    coef_r2 = mt.r2(preds, d)
+    assert coef_r2 > 0.95, f"R2 insuficiente: {coef_r2}"
+
+
+def probar_mlp_valida_argumentos():
+    """El MLP valida arquitecturas cortas, neuronas invalidas y razones no positivas."""
+    try:
+        PerceptronMulticapa((2,))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Se acepto arquitectura con menos de 2 capas")
+
+    try:
+        PerceptronMulticapa((2, 0, 1))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Se acepto capa con 0 neuronas")
+
+    try:
+        PerceptronMulticapa((2, 2, 1), razon_aprendizaje=-0.5)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Se acepto razon_aprendizaje negativa")
+
+
+# ---------------------------------------------------------------------------
+# Mapas Autoorganizados de Kohonen (SOM)
+# ---------------------------------------------------------------------------
+
+def probar_kohonen_error_cuantizacion_decrece():
+    """El entrenamiento no supervisado reduce el error de cuantizacion promedio."""
+    conjunto = ds.distribucion_clusters_2d(n_por_cluster=30, semilla=7)
+    som = MapaAutoorganizado(forma_mapa=(4, 4), max_epocas=50, semilla=7)
+    som.entrenar(conjunto.X)
+
+    ec_inicial = som.historia_ec[0]
+    ec_final = som.historia_ec[-1]
+    assert ec_final < ec_inicial * 0.6, f"Inicial {ec_inicial}, Final {ec_final}"
+
+
+def probar_kohonen_identifica_clusters():
+    """El SOM mapea clusters distantes en neuronas separadas con alta pureza."""
+    conjunto = ds.distribucion_clusters_2d(n_por_cluster=30, semilla=11)
+    som = MapaAutoorganizado(forma_mapa=(6, 6), max_epocas=60, semilla=11)
+    som.entrenar(conjunto.X)
+
+    comp = som.composicion_clusters(conjunto.X, conjunto.d)
+    puros = sum(max(cnts.values()) for cnts in comp.values())
+    pureza = puros / len(conjunto.X)
+    assert pureza >= 0.95, f"Pureza insuficiente: {pureza}"
+
+
+def probar_kohonen_matriz_u_dimensiones():
+    """La Matriz U tiene dimensiones iguales a la reticula y valores no negativos."""
+    som = MapaAutoorganizado(forma_mapa=(5, 7), semilla=1)
+    som.W = np.random.default_rng(1).uniform(-2, 2, size=(5, 7, 2))
+    U = som.matriz_u()
+    assert U.shape == (5, 7)
+    assert np.all(U >= 0.0)
+
+
+def probar_kohonen_valida_argumentos():
+    """El SOM rechaza reticulas degeneradas o razones de aprendizaje invalidas."""
+    try:
+        MapaAutoorganizado(forma_mapa=(0, 5))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Se acepto reticula con dimension cero")
+
+    try:
+        MapaAutoorganizado(razon_aprendizaje_inicial=1.5)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Se acepto razon inicial mayor que 1")
+
+
+# ---------------------------------------------------------------------------
+# Red de Hopfield (Memoria Asociativa)
+# ---------------------------------------------------------------------------
+
+def probar_hopfield_almacena_y_recupera_perfecto():
+    """Los 4 patrones de 7x6 (A, B, C, D) son puntos fijos exactos con la regla de proyeccion."""
+    conjunto = ds.letras_hopfield_7x6()
+    red = RedHopfield(n_neuronas=42, regla="proyeccion", semilla=42)
+    red.almacenar(conjunto.X, nombres=["A", "B", "C", "D"])
+
+    for p in conjunto.X:
+        rec, _, conv = red.recuperar(p, max_pasos=10, modo="sincrono")
+        assert conv
+        assert np.array_equal(rec, p)
+
+
+def probar_hopfield_energia_decrece_o_constante():
+    """La funcion de energia de Lyapunov decrece monotonamente en cada ciclo asincrono."""
+    conjunto = ds.letras_hopfield_7x6()
+    red = RedHopfield(n_neuronas=42, regla="proyeccion", semilla=123)
+    red.almacenar(conjunto.X)
+
+    patron_contaminado = contaminar_patron(conjunto.X[0], n_pixeles=6, semilla=123)
+    _, historia_e, conv = red.recuperar(patron_contaminado, max_pasos=20, modo="asincrono")
+
+    assert conv
+    for t in range(len(historia_e) - 1):
+        assert historia_e[t + 1] <= historia_e[t] + 1e-9, f"Energia subio: {historia_e[t]} -> {historia_e[t+1]}"
+
+
+def probar_hopfield_corrige_ruido():
+    """La red de Hopfield restaura la letra correcta con 4 pixeles de ruido."""
+    conjunto = ds.letras_hopfield_7x6()
+    red = RedHopfield(n_neuronas=42, regla="proyeccion", semilla=7)
+    red.almacenar(conjunto.X, nombres=["A", "B", "C", "D"])
+
+    for idx, p in enumerate(conjunto.X):
+        ruidoso = contaminar_patron(p, n_pixeles=4, semilla=idx * 10 + 3)
+        rec, _, _ = red.recuperar(ruidoso, max_pasos=25, modo="asincrono")
+        assert np.array_equal(rec, p), f"Fallo al recuperar letra {idx}"
+
+
+def probar_hopfield_io_imagenes_png():
+    """Guardar y cargar una imagen PNG produce exactamente el mismo patron bipolar."""
+    import tempfile
+    patron = ds.letra_7x6("A")
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        tmp_path = Path(f.name)
+
+    try:
+        guardar_imagen_png(patron, tmp_path, forma=(7, 6))
+        cargado = cargar_imagen_png(tmp_path, forma=(7, 6))
+        assert np.array_equal(patron, cargado)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+
+def probar_hopfield_valida_argumentos():
+    """Hopfield rechaza patrones no bipolares o de dimension incompatible."""
+    red = RedHopfield(n_neuronas=42)
+    try:
+        red.almacenar(np.zeros((2, 42)))  # no bipolar
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Se aceptaron patrones con ceros en Hopfield")
+
+    try:
+        red.almacenar(np.ones((2, 20)))  # dimension erronea
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Se acepto patron de dimension distinta a n_neuronas")
 
 
 # ---------------------------------------------------------------------------

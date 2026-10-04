@@ -1,0 +1,4 @@
+Reticula,Total Neuronas,Error Cuantizacion (QE),Error Topografico (TE),Pureza de Agrupamiento
+4x4,16,0.326723806935628,3.3 %,100.0 %
+6x6,36,0.216474781799372,6.0 %,100.0 %
+8x8,64,0.15150150856151057,7.7 %,100.0 %
