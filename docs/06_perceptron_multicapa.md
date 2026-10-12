@@ -1,149 +1,124 @@
-# 06 --- Perceptron Multicapa y Retropropagacion (Backpropagation)
+# 06 --- El perceptron multicapa y la retropropagacion
 
-> Modulo: [`ce_rna/mlp.py`](../ce_rna/mlp.py)  
-> Experimento: [08 (XOR y aproximacion de funciones)](../experimentos/exp08_mlp_xor_aproximacion.py)  
-> Informe: [08](../resultados/reportes/08_mlp_xor_aproximacion.md)  
-> Fuentes: `clases/claseRN01.md`, `clases/ICE-claseRN03.md` y Rumelhart, Hinton & Williams (1986).
+> Modulo: [`ce_rna/perceptron_multicapa.py`](../ce_rna/perceptron_multicapa.py)
+> Experimentos: [08 (XOR)](../experimentos/exp08_mlp_xor.py) ·
+> [09 (aproximacion de funciones)](../experimentos/exp09_mlp_aproximacion.py)
+> Informes: [08](../resultados/reportes/08_mlp_xor.md) ·
+> [09](../resultados/reportes/09_mlp_aproximacion.md)
+> Fuente: guia de evaluacion, Actividad 3 (clases 5, 6 y 7)
 
 ---
 
 ## 1. El problema que resuelve
 
-Los modelos de una sola capa (McCulloch-Pitts, Perceptron Simple y ADALINE) comparten una limitacion infranqueable:
-solo pueden construir **hiperplanos lineales** de decision. En el caso del OR-Exclusivo (XOR), tal como se demostro
-exhaustivamente en el Experimento 03, ninguna recta en el plano puede separar simultaneamente los cuatro patrones.
+El perceptron simple y el ADALINE trazan **una sola** frontera lineal. El experimento 03
+demostro que el XOR no admite ninguna, y el experimento 01 lo resolvio componiendo tres
+neuronas de McCulloch-Pitts, pero con los pesos **puestos a mano**. Faltaba un algoritmo
+que ajustara los pesos de una red con capas intermedias.
 
-Tal como formula `ICE-claseRN03.md` (secciones *Red Multicapa* y *Convexidad*):
-
-> *"El problema de separabilidad lineal o representatividad grafica para problemas mas complejos puede ser superado
-> sumando mas capas a la red... Las capas ocultas siempre son no lineales. Se puede demostrar que si se construye
-> una red multicapa con capas ocultas lineales, esta es equivalente a una red unicapa."*
-
-Ademas, segun el **Teorema de Aproximacion Universal** (Cybenko 1989, Hornik 1991), una red feedforward con al menos
-una capa oculta no lineal y salida lineal puede aproximar cualquier funcion continua definida sobre un compacto con
-arbitraria precision.
+La dificultad es la *asignacion de credito*: el error se mide en la salida, pero las
+neuronas ocultas no tienen salida deseada. ¿Cuanta culpa tiene cada peso oculto? La
+retropropagacion (Rumelhart, Hinton y Williams, 1986) responde con la regla de la cadena.
 
 ---
 
-## 2. Arquitectura de la red
-
-Una red de $L$ capas neuronales ($l = 1, \dots, L$) con $m_0$ entradas sensoriales:
+## 2. Arquitectura
 
 ```
-Capa 0 (Entrada)    Capa 1 (Oculta)         Capa L (Salida)
-    [x1] -----------> (h1) -----------------> (y1)
-    [x2] -----------> (h2)
-     :                  :                       :
-    [xm0] ----------> (hm1) ----------------> (ymL)
-    [x0=1]            [h0=1] (sesgos)
+entrada           capa oculta             salida
+ x1 ──┐      ┌──  h1 = φ(w·x) ──┐
+      ├──────┤                  ├──  y = φ(w·h)
+ x2 ──┘      └──  h2 = φ(w·x) ──┘
 ```
 
-Para cada capa $l$:
-* Matriz de pesos sinapticos $W^{(l)}$ de dimension $m_l \times m_{l-1}$.
-* Vector de sesgos $b^{(l)}$ de dimension $m_l$.
-* Potencial post-sinaptico: $v^{(l)} = W^{(l)} a^{(l-1)} + b^{(l)}$.
-* Activacion no lineal: $a^{(l)} = \phi^{(l)}(v^{(l)})$, donde $a^{(0)} = x$.
+- Capas totalmente conectadas hacia adelante, cada neurona con su peso de sesgo.
+- Activacion **sigmoidal** en las capas ocultas: φ(v) = 1/(1+e^−v), derivable en todo
+  punto y con φ'(v) = φ(v)(1 − φ(v)).
+- Salida sigmoidal para clasificar (objetivos en [0, 1]) o **lineal** para aproximar
+  funciones (salida real sin acotar).
+
+En el codigo, `W[l]` es una matriz `(n_{l+1}, n_l + 1)` cuya columna 0 es el sesgo.
 
 ---
 
-## 3. Derivacion matematica de Backpropagation
+## 3. Funcion de error y descenso por el gradiente
 
-El error cuadratico sobre un patron con salida real $a^{(L)}$ y objetivo deseado $d$ es:
+$$E = \frac{1}{N}\sum_{p} E^{p}, \qquad E^{p} = \tfrac{1}{2}\sum_k \left(d_k^{p} - y_k^{p}\right)^2$$
 
-$$E = \frac{1}{2} \sum_{k=1}^{m_L} (d_k - a_k^{(L)})^2$$
+Es el mismo error del ADALINE, sumado sobre las salidas. Cada peso se mueve en contra
+de la pendiente:
 
-Buscamos actualizar los pesos en la direccion opuesta al gradiente:
-
-$$\Delta W_{ji}^{(l)} = -\eta \frac{\partial E}{\partial W_{ji}^{(l)}}$$
-
-Por regla de la cadena:
-
-$$\frac{\partial E}{\partial W_{ji}^{(l)}} = \frac{\partial E}{\partial v_j^{(l)}} \frac{\partial v_j^{(l)}}{\partial W_{ji}^{(l)}} = -\delta_j^{(l)} a_i^{(l-1)}$$
-
-donde se define el **gradiente local** como $\delta_j^{(l)} \equiv -\frac{\partial E}{\partial v_j^{(l)}}$.
-
-### A. Capa de salida ($l = L$)
-
-$$\delta_k^{(L)} = -\frac{\partial E}{\partial a_k^{(L)}} \frac{\partial a_k^{(L)}}{\partial v_k^{(L)}} = (d_k - a_k^{(L)}) \cdot {\phi^{(L)}}'(v_k^{(L)})$$
-
-### B. Capas ocultas ($l = L-1, \dots, 1$)
-
-Aplicando la regla de la cadena a traves de todas las neuronas de la capa siguiente $l+1$:
-
-$$\delta_j^{(l)} = -\sum_k \frac{\partial E}{\partial v_k^{(l+1)}} \frac{\partial v_k^{(l+1)}}{\partial a_j^{(l)}} \frac{\partial a_j^{(l)}}{\partial v_j^{(l)}} = \left( \sum_k \delta_k^{(l+1)} W_{kj}^{(l+1)} \right) \cdot {\phi^{(l)}}'(v_j^{(l)})$$
-
-La senal de error $\delta$ se **retropropaga** desde la salida hacia las capas iniciales multiplicada por la transpuesta
-de la matriz de pesos sinapticos.
-
-### C. Termino de Momento ($\alpha$)
-
-Para evitar oscilaciones en valles estrechos y acelerar el paso a traves de mesetas (zonas donde $\phi' \approx 0$),
-Rumelhart et al. (1986) introdujeron el termino de momento inercial $\alpha \in [0, 1)$:
-
-$$\Delta W_{ji}^{(l)}(t) = \eta \cdot \delta_j^{(l)} a_i^{(l-1)} + \alpha \Delta W_{ji}^{(l)}(t-1)$$
+$$\Delta w = -\gamma\,\frac{\partial E}{\partial w}$$
 
 ---
 
-## 4. Funciones de activacion y sus derivadas
+## 4. Retropropagacion
 
-| Problema | Capa oculta | Capa de salida | Justificacion |
-|---|---|---|---|
-| **XOR / Clasificacion** | Sigmoide $\frac{1}{1+e^{-v}}$ | Sigmoide $\frac{1}{1+e^{-v}}$ | Salidas discretas $\{0, 1\}$, derivada rapida $\phi(1-\phi)$, acotada. |
-| **Aproximacion continua** | Sigmoide o Sigmoide Bipolar | Identidad $\phi(v)=v$ | Salida sin saturacion; permite alcanzar cualquier valor en $\mathbb{R}$. |
+Definiendo el gradiente local δ de cada neurona:
+
+| Capa | Gradiente local |
+|---|---|
+| Salida | δ_k = (d_k − y_k) · φ'(v_k) |
+| Oculta | δ_j = φ'(v_j) · Σ_k δ_k w_kj |
+
+y la actualizacion de cada peso tiene la forma de la regla Delta:
+
+$$\Delta w_{ji}^{(l)}(t) = \gamma\,\delta_j^{(l)}\,y_i^{(l-1)} + \alpha\,\Delta w_{ji}^{(l)}(t-1)$$
+
+El error se **propaga hacia atras** por los mismos pesos que usa la propagacion hacia
+adelante: cada neurona oculta recibe la suma de los errores de las neuronas a las que
+alimenta, ponderados por sus pesos. `gradiente()` implementa exactamente esto en forma
+matricial, y la prueba `probar_mlp_gradiente_numerico` comprueba que coincide con las
+diferencias finitas de E(W) con error < 1e-7.
 
 ---
 
-## 5. Uso como libreria
+## 5. Parametros de entrenamiento
+
+| Parametro | Papel | Efecto observado (exp. 08-09) |
+|---|---|---|
+| γ (razon de aprendizaje) | tamano del paso | pequeno → mesetas largas; grande → oscilacion y saturacion |
+| α (momento) | inercia del paso | acelera las mesetas; paso efectivo γ/(1 − α) |
+| neuronas ocultas | capacidad | XOR: 2 bastan, 3+ son mas robustas; f(x): hacen falta ~8 |
+| modo | estocastico / lotes | lotes necesita γ mayor; estocastico tiene ruido util |
+| escala inicial | pesos iniciales en [−a, a] | pequenos: sigmoides en su zona lineal |
+
+### Criterios de parada
+
+1. **Error objetivo**: E ≤ ε. Clasificar bien llega antes que un error pequeno; con
+   sigmoides E → 0 exige pesos → ∞, asi que ε debe ser razonable.
+2. **Maximo de epocas**: garantiza terminar aunque la red este en un minimo local.
+3. **Parada temprana**: con un conjunto de validacion, se detiene cuando su error no
+   mejora durante `paciencia` epocas y se restauran los mejores pesos. Evita el
+   sobreajuste con datos ruidosos.
+
+---
+
+## 6. Limitaciones
+
+- **Minimos locales**: el descenso por el gradiente es local. Con la 2-2-1 ~10 % de las
+  inicializaciones no resuelve el XOR.
+- **Mesetas**: zonas donde el gradiente es casi nulo; el error parece estancado.
+- **Sobreajuste**: una red grande con pocos datos ruidosos aprende el ruido.
+- **No extrapola**: fuera del dominio de entrenamiento las sigmoides se saturan.
+
+---
+
+## 7. Uso
 
 ```python
-import numpy as np
-from ce_rna.mlp import PerceptronMulticapa
+from ce_rna import datasets as ds
+from ce_rna.activaciones import Identidad
+from ce_rna.perceptron_multicapa import PerceptronMulticapa
 
-# 1. Resolucion del XOR con arquitectura 2-2-1
-X = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
-d = np.array([0, 1, 1, 0])
+xor = ds.compuerta("XOR")
+red = PerceptronMulticapa([2, 2, 1], razon_aprendizaje=0.5, error_objetivo=0.005)
+red.entrenar(xor.X, xor.d)
+print(red.salida(xor.X))       # ~ [0.09 0.90 0.90 0.10]
 
-red = PerceptronMulticapa(
-    arquitectura=(2, 2, 1),
-    activacion_oculta="sigmoide",
-    activacion_salida="sigmoide",
-    razon_aprendizaje=1.0,
-    momento=0.5,
-    max_epocas=2500,
-    tolerancia=1e-4,
-    semilla=42,
-)
-red.entrenar(X, d)
-
-print(red.predecir(X))   # ~ [0.017, 0.985, 0.985, 0.015]
-print(red.clasificar(X)) # [0. 1. 1. 0.]
-
-# 2. Aproximacion de f(x) = sin(x) con arquitectura 1-8-1 y salida lineal
-x_datos = np.linspace(-np.pi, np.pi, 100).reshape(-1, 1)
-y_datos = np.sin(x_datos).ravel()
-
-aprox = PerceptronMulticapa(
-    arquitectura=(1, 8, 1),
-    activacion_oculta="sigmoide",
-    activacion_salida="identidad",
-    razon_aprendizaje=0.08,
-    momento=0.7,
-    modo="lote",
-    max_epocas=3000,
-    semilla=42,
-)
-aprox.entrenar(x_datos, y_datos)
-print("ECM final:", aprox.historia_error[-1])
+ent, pru = ds.aproximacion_funcion()
+red = PerceptronMulticapa([1, 8, 1], razon_aprendizaje=0.1, momento=0.5,
+                          activacion_salida=Identidad(), escala_inicial=2.0,
+                          max_epocas=8000, error_objetivo=1e-5)
+red.entrenar(ent.X, ent.d, pru.X, pru.d)
 ```
-
----
-
-## 6. Verificacion numerica del gradiente
-
-En [`pruebas/pruebas.py`](../pruebas/pruebas.py), la prueba `probar_mlp_gradiente_coincide_con_derivada_numerica`
-compara el gradiente analitico $\partial E / \partial W$ obtenido por Backpropagation con la derivada numerica:
-
-$$\frac{\partial E}{\partial W_{ji}} \approx \frac{E(W_{ji} + \epsilon) - E(W_{ji} - \epsilon)}{2\epsilon}$$
-
-con $\epsilon = 10^{-6}$. La diferencia observada es menor a $2 \times 10^{-12}$, confirmando la exactitud analitica
-del algoritmo implementado.

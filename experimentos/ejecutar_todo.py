@@ -1,5 +1,5 @@
 """
-Ejecuta los siete experimentos en orden y regenera todas las figuras, tablas e
+Ejecuta los trece experimentos en orden y regenera todas las figuras, tablas e
 informes de `resultados/`.
 
     python experimentos/ejecutar_todo.py
@@ -27,9 +27,11 @@ EXPERIMENTOS = [
     ("exp05_adaline_decodificador", "ADALINE: descodificador binario-decimal"),
     ("exp06_perceptron_vs_adaline", "Perceptron frente a ADALINE"),
     ("exp07_hebb", "Regla de Hebb"),
-    ("exp08_mlp_xor_aproximacion", "Perceptron Multicapa: XOR y aproximacion"),
-    ("exp09_kohonen_clustering", "Mapas de Kohonen: clustering no supervisado"),
-    ("exp10_hopfield_imagenes", "Red de Hopfield: memoria asociativa e imagenes 7x6"),
+    ("exp08_mlp_xor", "Perceptron multicapa: XOR"),
+    ("exp09_mlp_aproximacion", "Perceptron multicapa: aproximacion de funciones"),
+    ("exp10_kohonen", "Mapas autoorganizados de Kohonen"),
+    ("exp11_hopfield", "Red de Hopfield: letras A, B, C, D"),
+    ("exp12_imagenes_reales", "Imagenes reales: Hopfield frente a MLP entrenado"),
 ]
 
 

@@ -1,312 +1,177 @@
 """
-Red de Hopfield para Almacenamiento y Recuperacion de Patrones (Memoria Asociativa).
+Red de Hopfield (1982): memoria asociativa direccionable por contenido.
 
-Referencia teorica
-------------------
-* Hopfield, J. J. (1982): "Neural networks and physical systems with emergent
-  collective computational abilities".
-* `clases/claseRN02.md`, seccion "Aprendizaje supervisado y memorias asociativas":
-  "Las redes con supervision tales como la red de Hopfield y el perceptron son
-  usadas como memorias asociativas o como clasificadores."
-* Personnaz, Guyon y Dreyfus (1985): regla de proyeccion / pseudoinversa para
-  patrones correlacionados.
+Referencia: guia de evaluacion, Actividad 5.
 
-Fundamentos matematicos
------------------------
-1. Arquitectura:
-   Red recurrente de N neuronas completamente interconectadas con salidas bipolares
-   s_i in {-1, +1}.
-   - Conexiones simetricas: W_{ij} = W_{ji}.
-   - Sin auto-conexiones: W_{ii} = 0.
+Idea
+----
+Una red de Hopfield no clasifica ni aproxima: **recuerda**.  Se le presentan P
+patrones bipolares xi^mu en {-1, +1}^N y los almacena en una matriz de pesos
+simetrica.  Despues, a partir de una version incompleta o contaminada de uno de
+ellos, la dinamica de la red evoluciona hasta el patron almacenado mas parecido.
 
-2. Almacenamiento (Regla de Hebb):
-   Para P patrones de memoria xi^mu in {-1, +1}^N, mu = 1, ..., P:
-       W_{ij} = (1 / N) * sum_{mu=1}^P xi_i^mu * xi_j^mu  (para i != j)
-       W_{ii} = 0
-   En forma matricial:
-       W = (1 / N) * sum_mu xi^mu (xi^mu)^T - (P / N) * I
+Arquitectura
+------------
+Una sola capa de N neuronas binarias, cada una conectada con **todas las
+demas** (recurrente), sin autoconexiones:  w_ij = w_ji,  w_ii = 0.  Para una
+imagen de 7x6 pixeles, N = 42 neuronas y 42*41/2 = 861 pesos distintos.
 
-3. Almacenamiento (Regla de Proyeccion / Pseudoinversa):
-   Cuando los patrones presentan solapamiento correlacional (como letras del abecedario),
-   la regla hebbiana sufre de interferencia cruzada (*cross-talk*). La regla del proyector
-   ortogonal desacopla los patrones calculando:
-       W = X^T * (X * X^T)^(-1) * X
-   anulando la diagonal (W_{ii} = 0), lo que garantiza que todos los patrones almacenados
-   sean puntos fijos estables (atractores exactos).
+Almacenamiento (regla de Hebb, una sola pasada)
+-----------------------------------------------
+    w_ij = (1/N) sum_mu xi_i^mu xi_j^mu       (i != j)
 
-4. Dinamica de Recuperacion:
-   Dado un estado inicial s(0) (patron incompleto o con ruido):
-   - Actualizacion:
-       s_i(t+1) = sgn( sum_{j=1}^N W_{ij} * s_j(t) - theta_i )
-     con umbral theta_i = 0 y sgn(v) = +1 si v >= 0 y -1 si v < 0.
-   - Modo Asincrono: actualiza neuronas una a una en orden aleatorio o secuencial.
-     Garantiza convergencia a un minimo local de energia.
-   - Modo Sincrono: actualiza todas las neuronas en paralelo s(t+1) = sgn(W * s(t)).
+No hay iteraciones ni error: los pesos se calculan de una vez.  Tambien se
+ofrece la regla de la **pseudoinversa** (proyeccion), que hace que cada patron
+sea exactamente un punto fijo aunque los patrones esten correlacionados.
 
-5. Funcion de Energia de Lyapunov:
-   La red minimiza monotonamente la funcion de energia:
-       E(s) = - 1/2 * sum_{i=1}^N sum_{j=1}^N W_{ij} * s_i * s_j = - 1/2 * s^T * W * s
-   En cada paso de actualizacion asincrona, Delta E <= 0. Los patrones almacenados
-   constituyen valles de atraccion (pozos de potencial) en el hiperespacio {-1, +1}^N.
+Recuperacion (dinamica asincrona)
+---------------------------------
+Partiendo del estado s(0) = patron de prueba, se elige una neurona i y
+
+    s_i <- sgn( sum_j w_ij s_j )
+
+hasta que ningun cambio de neurona modifica el estado (punto fijo).  Con pesos
+simetricos y actualizacion asincrona la **energia**
+
+    E(s) = -(1/2) sum_ij w_ij s_i s_j
+
+nunca aumenta, de modo que la red siempre converge a un minimo local de E.  Los
+patrones almacenados son (idealmente) esos minimos: son los *atractores*.
+
+Limitaciones que el experimento mide
+------------------------------------
+* Capacidad: con la regla de Hebb y patrones aleatorios, P_max ~ 0.138 N.
+  Para N = 42 son unos 5-6 patrones; cuatro letras estan cerca del limite,
+  y ademas las letras NO son aleatorias: B y D comparten muchos pixeles.
+* Estados espurios: el inverso -xi de cada patron tambien es un atractor, y
+  aparecen mezclas de patrones que no son ninguno de los almacenados.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Sequence
+from dataclasses import dataclass, field
 
 import numpy as np
-from PIL import Image
+
+
+@dataclass
+class ResultadoRecuperacion:
+    """Resultado de una recuperacion."""
+
+    estado: np.ndarray
+    iteraciones: int                    # barridos completos de las N neuronas
+    convergio: bool
+    energia: list[float] = field(default_factory=list)
+    cambios: int = 0                    # numero total de neuronas que cambiaron
+
+
+def _signo(v, anterior):
+    """sgn(v) con la convencion de conservar el estado si v == 0."""
+    return np.where(v > 0, 1.0, np.where(v < 0, -1.0, anterior))
 
 
 class RedHopfield:
-    """Red de Hopfield continua-discreta con funcion de energia de Lyapunov.
+    """Red de Hopfield discreta con neuronas bipolares.
 
     Parameters
     ----------
     n_neuronas:
-        Numero de neuronas N de la red (por ejemplo 42 para matrices de 7x6).
+        N, numero de neuronas (= numero de pixeles de la imagen).
     regla:
-        ``"hebb"`` utiliza la regla hebbiana estandar del modelo clasico.
-        ``"proyeccion"`` utiliza la regla del proyector (pseudoinversa) para
-        eliminar la interferencia cruzada entre patrones correlacionados.
-    semilla:
-        Semilla del generador aleatorio para la dinamica asincrona.
+        ``"hebb"`` (producto exterior, la regla clasica) o ``"pseudoinversa"``.
     """
 
-    def __init__(
-        self,
-        n_neuronas: int = 42,
-        regla: str = "proyeccion",
-        semilla: int | None = None,
-    ):
-        if n_neuronas <= 1:
-            raise ValueError("n_neuronas debe ser mayor a 1")
-        if regla not in ("hebb", "proyeccion"):
-            raise ValueError("regla debe ser 'hebb' o 'proyeccion'")
-
-        self.n_neuronas = int(n_neuronas)
+    def __init__(self, n_neuronas: int, regla: str = "hebb"):
+        if regla not in ("hebb", "pseudoinversa"):
+            raise ValueError("regla debe ser 'hebb' o 'pseudoinversa'")
+        self.N = int(n_neuronas)
         self.regla = regla
-        self.semilla = semilla
-        self.rng = np.random.default_rng(semilla)
+        self.W = np.zeros((self.N, self.N))
+        self.patrones = np.zeros((0, self.N))
 
-        # Matriz de pesos sinapticos W (N x N)
-        self.W = np.zeros((self.n_neuronas, self.n_neuronas), dtype=float)
-        self.patrones_almacenados: list[np.ndarray] = []
-        self.nombres_patrones: list[str] = []
-
-    def almacenar(
-        self,
-        patrones: Sequence[np.ndarray] | np.ndarray,
-        nombres: Sequence[str] | None = None,
-    ) -> RedHopfield:
-        """Almacena un conjunto de patrones bipolares en la memoria asociativa.
-
-        Parameters
-        ----------
-        patrones:
-            Matriz de forma (P, N) o lista de P vectores de longitud N con valores {-1, +1}.
-        nombres:
-            Etiquetas opcionales para identificar los patrones almacenados.
-        """
-        X = np.atleast_2d(np.asarray(patrones, dtype=float))
-        P, N = X.shape
-
-        if N != self.n_neuronas:
-            raise ValueError(f"Cada patron debe tener longitud {self.n_neuronas}; recibido {N}")
-
-        # Validar bipolaridad
-        valores_unicos = set(np.unique(X).tolist())
-        if not valores_unicos.issubset({-1.0, 1.0}):
-            raise ValueError("Los patrones de Hopfield deben ser estrictamente bipolares {-1.0, +1.0}")
-
-        self.patrones_almacenados = [p.copy() for p in X]
-        self.nombres_patrones = (
-            list(nombres) if nombres is not None else [f"P{i+1}" for i in range(P)]
-        )
-
+    # -- almacenamiento ------------------------------------------------------
+    def almacenar(self, patrones) -> "RedHopfield":
+        P = np.atleast_2d(np.asarray(patrones, dtype=float))
+        if P.shape[1] != self.N:
+            raise ValueError(f"los patrones deben tener {self.N} elementos")
+        if not np.all(np.isin(P, (-1.0, 1.0))):
+            raise ValueError("los patrones deben ser bipolares (-1 / +1)")
+        self.patrones = P.copy()
         if self.regla == "hebb":
-            # W = (1/N) * sum_mu xi_mu @ xi_mu^T
-            self.W = np.zeros((N, N), dtype=float)
-            for p in X:
-                self.W += np.outer(p, p)
-            self.W /= N
-        else:  # Regla de proyeccion / pseudoinversa
-            # W = X^T (X X^T)^(-1) X
-            matriz_correlacion = X @ X.T
-            inv_corr = np.linalg.pinv(matriz_correlacion)
-            self.W = X.T @ inv_corr @ X
-
-        # Condicion de Hopfield: conexiones simetricas sin auto-bucles (W_ii = 0)
+            self.W = (P.T @ P) / self.N
+        else:
+            # W = X (X^T X)^-1 X^T con X = P^T (N x P): proyector sobre el
+            # subespacio generado por los patrones.  W xi = xi exactamente.
+            X = P.T
+            self.W = X @ np.linalg.pinv(X.T @ X) @ X.T
         np.fill_diagonal(self.W, 0.0)
-        self.W = 0.5 * (self.W + self.W.T)  # Garantizar simetria exacta
-
         return self
 
-    def energia(self, s: np.ndarray) -> float:
-        """Calcula la funcion de energia de Lyapunov: E(s) = -1/2 * s^T * W * s."""
-        s = np.asarray(s, dtype=float).ravel()
-        return float(-0.5 * (s @ self.W @ s))
+    # -- dinamica ------------------------------------------------------------
+    def energia(self, s) -> float:
+        s = np.asarray(s, dtype=float)
+        return float(-0.5 * s @ self.W @ s)
 
-    def recuperar(
-        self,
-        patron_inicial: np.ndarray,
-        max_pasos: int = 50,
-        modo: str = "asincrono",
-    ) -> tuple[np.ndarray, list[float], bool]:
-        """Evoluciona el estado desde patron_inicial hasta alcanzar un atractor estable.
+    def recuperar(self, s0, max_iteraciones: int = 100, modo: str = "asincrono",
+                  semilla: int = 0) -> ResultadoRecuperacion:
+        """Evoluciona desde `s0` hasta un punto fijo (o `max_iteraciones` barridos).
 
-        Parameters
-        ----------
-        patron_inicial:
-            Vector bipolar (N,) de entrada (por ejemplo, imagen con ruido).
-        max_pasos:
-            Numero maximo de ciclos completos de actualizacion.
-        modo:
-            ``"asincrono"`` actualiza neuronas una a una en orden aleatorio (descenso estricto de energia).
-            ``"sincrono"`` actualiza todas las neuronas a la vez.
-
-        Returns
-        -------
-        estado_final:
-            Vector bipolar recuperado.
-        historia_energia:
-            Lista con la evolucion de la energia de Lyapunov en cada paso.
-        convergio:
-            True si alcanzo un punto fijo estable.
+        En modo asincrono cada barrido visita las N neuronas en orden aleatorio
+        y actualiza una a una, usando siempre el estado mas reciente.  En modo
+        sincrono se actualizan todas a la vez (puede entrar en ciclos de 2).
         """
-        s = np.asarray(patron_inicial, dtype=float).ravel().copy()
-        N = self.n_neuronas
-        historia_energia = [self.energia(s)]
-
-        for paso in range(max_pasos):
-            s_previo = s.copy()
-
+        rng = np.random.default_rng(semilla)
+        s = np.asarray(s0, dtype=float).copy()
+        energias = [self.energia(s)]
+        cambios = 0
+        for it in range(1, max_iteraciones + 1):
+            cambio_en_barrido = False
             if modo == "asincrono":
-                orden = self.rng.permutation(N)
-                for i in orden:
-                    campo_local = float(self.W[i] @ s)
-                    s[i] = 1.0 if campo_local >= 0.0 else -1.0
-            else:  # sincrono
-                campo_total = self.W @ s
-                s = np.where(campo_total >= 0.0, 1.0, -1.0)
+                for i in rng.permutation(self.N):
+                    nuevo = _signo(self.W[i] @ s, s[i])
+                    if nuevo != s[i]:
+                        s[i] = nuevo
+                        cambios += 1
+                        cambio_en_barrido = True
+            else:
+                nuevo = _signo(self.W @ s, s)
+                cambio_en_barrido = not np.array_equal(nuevo, s)
+                cambios += int(np.sum(nuevo != s))
+                s = nuevo
+            energias.append(self.energia(s))
+            if not cambio_en_barrido:
+                return ResultadoRecuperacion(s, it, True, energias, cambios)
+        return ResultadoRecuperacion(s, max_iteraciones, False, energias, cambios)
 
-            e_actual = self.energia(s)
-            historia_energia.append(e_actual)
+    def es_punto_fijo(self, s) -> bool:
+        s = np.asarray(s, dtype=float)
+        return bool(np.array_equal(_signo(self.W @ s, s), s))
 
-            if np.array_equal(s, s_previo):
-                return s, historia_energia, True
+    # -- interpretacion ------------------------------------------------------
+    def solapamientos(self, s) -> np.ndarray:
+        """m_mu = (1/N) xi^mu . s  en [-1, 1]; 1 = identico, -1 = inverso."""
+        return self.patrones @ np.asarray(s, dtype=float) / self.N
 
-        return s, historia_energia, False
+    def identificar(self, s) -> tuple[int, str]:
+        """Clasifica un estado final.
 
-    def identificar_patron(self, estado: np.ndarray) -> tuple[int | None, str, float]:
-        """Compara el estado con los patrones almacenados mediante solapamiento normalizado.
-
-        Returns
-        -------
-        indice:
-            Indice del patron mas cercano, o None si no hay coincidencia positiva.
-        nombre:
-            Nombre del patron o "Estado Espurio".
-        similitud:
-            Fraccion de pixeles coincidentes (1.0 = recuperacion perfecta).
+        Devuelve ``(mu, tipo)`` con tipo ``"patron"`` si s coincide con xi^mu,
+        ``"inverso"`` si coincide con -xi^mu, o ``(-1, "espurio")`` si no es
+        ninguno de los almacenados ni sus inversos.
         """
-        s = np.asarray(estado, dtype=float).ravel()
-        mejor_indice = None
-        mejor_nombre = "Estado Espurio"
-        mejor_similitud = -1.0
+        m = self.solapamientos(s)
+        for mu, valor in enumerate(m):
+            if np.isclose(valor, 1.0):
+                return mu, "patron"
+        for mu, valor in enumerate(m):
+            if np.isclose(valor, -1.0):
+                return mu, "inverso"
+        return -1, "espurio"
 
-        for idx, (p, nombre) in enumerate(zip(self.patrones_almacenados, self.nombres_patrones)):
-            coincidencias = np.mean(s == p)
-            if coincidencias > mejor_similitud:
-                mejor_similitud = float(coincidencias)
-                mejor_indice = idx
-                mejor_nombre = nombre
+    def capacidad_teorica(self) -> float:
+        """P_max ~ 0.138 N (Amit, Gutfreund y Sompolinsky, 1985) para la regla de Hebb."""
+        return 0.138 * self.N
 
-        if mejor_similitud == 1.0:
-            return mejor_indice, mejor_nombre, 1.0
-        elif mejor_similitud > 0.8:
-            return mejor_indice, f"{mejor_nombre} (parcial)", mejor_similitud
-        else:
-            return None, "Estado Espurio", mejor_similitud
-
-
-# ---------------------------------------------------------------------------
-# Utilidades de Imagen (PNG / Bipolar) y Ruido
-# ---------------------------------------------------------------------------
-
-def guardar_imagen_png(
-    patron: np.ndarray,
-    ruta: str | Path,
-    forma: tuple[int, int] = (7, 6),
-    escala: int = 24,
-) -> Path:
-    """Guarda un patron bipolar como un archivo de imagen PNG real visible.
-
-    Parameters
-    ----------
-    patron:
-        Vector bipolar (longitud filas x columnas) con valores {-1, +1}.
-    ruta:
-        Ruta del archivo .png de destino.
-    forma:
-        Dimensiones (filas, columnas) de la imagen (por omision 7x6).
-    escala:
-        Factor de escalado para que la imagen no sea diminuta (ej. 24x produce 144x168 px).
-    """
-    ruta = Path(ruta)
-    ruta.parent.mkdir(parents=True, exist_ok=True)
-
-    arr = np.asarray(patron, dtype=float).reshape(forma)
-    # Convencion visual de la clase: pixel encendido (+1) es oscuro (0), fondo (-1) es blanco (255)
-    img_array = np.where(arr >= 0.0, 0, 255).astype(np.uint8)
-
-    img = Image.fromarray(img_array, mode="L")
-    alto_px = forma[0] * escala
-    ancho_px = forma[1] * escala
-    img_escalada = img.resize((ancho_px, alto_px), resample=Image.Resampling.NEAREST)
-    img_escalada.save(ruta)
-    return ruta
-
-
-def cargar_imagen_png(
-    ruta: str | Path,
-    forma: tuple[int, int] = (7, 6),
-    umbral: int = 128,
-) -> np.ndarray:
-    """Lee un archivo de imagen real (PNG/JPG/BMP), lo convierte a escala de grises y lo binariza.
-
-    Permite a la red de Hopfield recibir imagenes dibujadas o fotos externas.
-
-    Parameters
-    ----------
-    ruta:
-        Ruta del archivo de imagen.
-    forma:
-        Dimensiones (filas, columnas) a las que se redimensiona la imagen.
-    umbral:
-        Valor de brillo (0-255) para separar pixel encendido (+1) de fondo (-1).
-    """
-    ruta = Path(ruta)
-    if not ruta.exists():
-        raise FileNotFoundError(f"No existe el archivo de imagen: {ruta}")
-
-    img = Image.open(ruta).convert("L")
-    # Redimensionar a (columnas, filas) segun la convencion de PIL (ancho, alto)
-    img_res = img.resize((forma[1], forma[0]), resample=Image.Resampling.BILINEAR)
-    arr = np.array(img_res)
-
-    # Pixel oscuro (< umbral) es +1 (trazo), pixel claro es -1 (fondo)
-    patron_bipolar = np.where(arr < umbral, 1.0, -1.0).ravel()
-    return patron_bipolar
-
-
-def contaminar_patron(patron: np.ndarray, n_pixeles: int, semilla: int | None = None) -> np.ndarray:
-    """Invierte exactamente `n_pixeles` posiciones al azar en un patron bipolar."""
-    rng = np.random.default_rng(semilla)
-    copia = np.asarray(patron, dtype=float).copy().ravel()
-    if n_pixeles > copia.size:
-        raise ValueError(f"n_pixeles ({n_pixeles}) excede el tamano del patron ({copia.size})")
-    indices = rng.choice(copia.size, size=n_pixeles, replace=False)
-    copia[indices] *= -1.0
-    return copia
+    def resumen(self) -> str:
+        return (f"Hopfield N = {self.N} | regla {self.regla} | {self.patrones.shape[0]} patrones "
+                f"almacenados | capacidad teorica (Hebb) ~ {self.capacidad_teorica():.1f}")

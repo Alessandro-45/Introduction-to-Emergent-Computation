@@ -1,280 +1,300 @@
 """
-Mapas Autoorganizados de Kohonen (Self-Organizing Maps, SOM).
+Mapa autoorganizado de Kohonen (SOM, Self-Organizing Map, 1982).
 
-Referencia teorica
-------------------
-* Kohonen, T. (1982): "Self-organized formation of topologically correct feature maps".
-* `clases/claseRN02.md`, seccion "Aprendizaje no supervisado":
-  "Las redes entrenadas sin supervision, tales como los mapas de Kohonen, son usados
-  como vectores para formar cluster. Ninguna informacion relacionada a la clase correcta
-  es dada a la red durante el entrenamiento."
+Referencia: guia de evaluacion, Actividad 4.
 
-Fundamentos matematicos
------------------------
-1. Topologia de la red:
-   Una reticula bidimensional discreta de dimensiones (K_x, K_y) donde cada neurona j
-   ocupa una coordenada fija r_j = (fila, columna) en el mapa y posee un vector de
-   pesos sinapticos o prototipo w_j in R^D (con D la dimension del espacio de entrada).
+Aprendizaje no supervisado
+--------------------------
+A diferencia del perceptron, el ADALINE o el MLP, aqui **no hay salida
+deseada**: la red solo ve los patrones x y tiene que descubrir por si misma como
+estan organizados.  No existe un error que retropropagar; el aprendizaje es
+**competitivo**: las neuronas compiten por representar cada patron.
 
-2. Fase de Competicion (Best Matching Unit - BMU):
-   Ante un vector de entrada x in R^D, se identifica la neurona ganadora j* cuya distancia
-   euclidea al patron sea minima:
-       j* = argmin_j || x - w_j ||
+Arquitectura
+------------
+Una capa de entrada de dimension m (aqui m = 2: puntos del plano) totalmente
+conectada a una rejilla bidimensional de F x C neuronas.  Cada neurona j tiene
+un vector de pesos w_j en el MISMO espacio que los datos --- su *prototipo* --- y
+una posicion fija r_j = (fila, columna) en la rejilla.
 
-3. Fase de Cooperacion (Funcion de Vecindad):
-   La activacion de la neurona ganadora influye sobre sus vecinas topologicas mediante
-   una funcion gaussiana:
-       h_{j, j*}(t) = exp( - || r_j - r_{j*} ||^2 / (2 * sigma(t)^2) )
-   donde sigma(t) es el radio de vecindad en la epoca t, que decrece exponencialmente:
-       sigma(t) = sigma_0 * (sigma_final / sigma_0)^(t / T)
+Algoritmo (en cada iteracion t, con un patron x elegido al azar)
+----------------------------------------------------------------
+1. Competicion: la neurona ganadora (BMU, *best matching unit*) es la de
+   prototipo mas cercano,
 
-4. Fase de Adaptacion:
-   Los pesos de todas las neuronas se actualizan atrayendolos hacia la entrada x:
-       w_j(t+1) = w_j(t) + eta(t) * h_{j, j*}(t) * (x - w_j(t))
-   con la razon de aprendizaje eta(t) decreciendo exponencialmente:
-       eta(t) = eta_0 * (eta_final / eta_0)^(t / T)
+       c = argmin_j || x - w_j ||
 
-5. Metricas de Calidad del Mapa:
-   - Error de Cuantizacion (QE): distancia media de cada patron a su BMU.
-   - Error Topografico (TE): fraccion de patrones cuyo 1er y 2do BMU no son vecinos contiguos.
-   - Matriz U (Unified Distance Matrix): distancia euclidea media entre cada neurona y sus
-     vecinas inmediatas en la reticula, revelando fronteras y densidad de clusters.
+2. Cooperacion: la ganadora arrastra a sus vecinas **en la rejilla** con una
+   intensidad que decae con la distancia topologica,
+
+       h_cj(t) = exp( - || r_c - r_j ||^2 / (2 sigma(t)^2) )
+
+3. Adaptacion: todos los prototipos se mueven hacia el patron,
+
+       w_j <- w_j + eta(t) h_cj(t) (x - w_j)
+
+La razon de aprendizaje eta(t) y el radio de vecindad sigma(t) decrecen
+exponencialmente.  Al principio sigma es grande y el mapa se *ordena* (se
+despliega sin pliegues); al final sigma es menor que 1 y cada neurona solo
+*afina* su prototipo (fase de convergencia).
+
+Lectura del mapa entrenado
+--------------------------
+* Densidad de impactos: cuantos patrones gana cada neurona.
+* Matriz U (unified distance matrix): distancia media entre el prototipo de cada
+  neurona y los de sus vecinas en la rejilla.  Valores bajos = interior de un
+  grupo; valores altos = frontera entre grupos.  Es la forma estandar de *ver*
+  los clusters sin conocer las clases.
+* `segmentar`: agrupa neuronas vecinas con prototipos cercanos (componentes
+  conexas del grafo de la rejilla), lo que da una particion de los datos
+  obtenida de forma **totalmente no supervisada**.
 """
 
 from __future__ import annotations
 
-from typing import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 
 
-class MapaAutoorganizado:
-    """Mapa Autoorganizado de Kohonen (SOM) en reticula bidimensional rectangular.
+@dataclass
+class InstantaneaSOM:
+    """Copia de los prototipos en una iteracion dada (para animar el despliegue)."""
+
+    iteracion: int
+    prototipos: np.ndarray
+    eta: float
+    sigma: float
+
+
+class MapaKohonen:
+    """Mapa autoorganizado rectangular entrenado patron a patron.
 
     Parameters
     ----------
-    forma_mapa:
-        Tupla (filas, columnas) que define la reticula de neuronas. Ej. (6, 6).
-    n_entradas:
-        Dimension D del espacio de entrada (por ejemplo, 2 para puntos en el plano).
-    razon_aprendizaje_inicial:
-        eta_0, razon de aprendizaje inicial (0 < eta_0 <= 1).
-    razon_aprendizaje_final:
-        eta_final, razon de aprendizaje al terminar max_epocas.
-    radio_inicial:
-        sigma_0, radio inicial de vecindad. Si es None, se asigna max(forma_mapa) / 2.
-    radio_final:
-        sigma_final, radio de vecindad al terminar max_epocas.
-    max_epocas:
-        Numero total de epocas de entrenamiento.
+    filas, columnas:
+        Tamano de la rejilla de neuronas.
+    dimension:
+        Dimension de los patrones de entrada.
+    eta_inicial, eta_final:
+        Razon de aprendizaje al principio y al final del entrenamiento.
+    sigma_inicial, sigma_final:
+        Radio de la vecindad gaussiana (en unidades de la rejilla).  Por
+        omision, sigma_inicial es la mitad del lado mayor del mapa.
+    iteraciones:
+        Numero total de presentaciones de patrones.
     inicializacion:
-        ``"aleatoria"`` (valores uniformes en el rango de los datos) o ``"pca"``.
+        ``"aleatoria"`` (patrones del conjunto elegidos al azar) o
+        ``"rejilla"`` (malla regular sobre el rectangulo que contiene los datos).
     semilla:
-        Semilla para el generador de numeros aleatorios (reproducibilidad).
+        Semilla del generador.
     """
 
     def __init__(
         self,
-        forma_mapa: tuple[int, int] = (6, 6),
-        n_entradas: int = 2,
-        razon_aprendizaje_inicial: float = 0.5,
-        razon_aprendizaje_final: float = 0.01,
-        radio_inicial: float | None = None,
-        radio_final: float = 0.5,
-        max_epocas: int = 200,
+        filas: int,
+        columnas: int,
+        dimension: int = 2,
+        eta_inicial: float = 0.5,
+        eta_final: float = 0.01,
+        sigma_inicial: float | None = None,
+        sigma_final: float = 0.5,
+        iteraciones: int = 5000,
         inicializacion: str = "aleatoria",
-        semilla: int | None = None,
+        semilla: int = 0,
     ):
-        if len(forma_mapa) != 2 or any(k <= 0 for k in forma_mapa):
-            raise ValueError("forma_mapa debe ser una tupla de dos enteros positivos (filas, columnas)")
-        if n_entradas <= 0:
-            raise ValueError("n_entradas debe ser un entero positivo")
-        if not (0 < razon_aprendizaje_final <= razon_aprendizaje_inicial <= 1.0):
-            raise ValueError("Las razones de aprendizaje deben cumplir 0 < final <= inicial <= 1")
-
-        self.filas, self.columnas = forma_mapa
-        self.n_neuronas = self.filas * self.columnas
-        self.n_entradas = int(n_entradas)
-        self.eta_0 = float(razon_aprendizaje_inicial)
-        self.eta_f = float(razon_aprendizaje_final)
-        self.sigma_0 = float(radio_inicial) if radio_inicial is not None else max(self.filas, self.columnas) / 2.0
-        self.sigma_f = float(radio_final)
-        self.max_epocas = int(max_epocas)
+        if filas < 1 or columnas < 1:
+            raise ValueError("el mapa necesita al menos una neurona")
+        if inicializacion not in ("aleatoria", "rejilla"):
+            raise ValueError("inicializacion debe ser 'aleatoria' o 'rejilla'")
+        self.filas = int(filas)
+        self.columnas = int(columnas)
+        self.dimension = int(dimension)
+        self.eta_inicial = float(eta_inicial)
+        self.eta_final = float(eta_final)
+        self.sigma_inicial = float(sigma_inicial if sigma_inicial is not None
+                                   else max(filas, columnas) / 2.0)
+        self.sigma_final = float(sigma_final)
+        self.iteraciones = int(iteraciones)
         self.inicializacion = inicializacion
-        self.semilla = semilla
-
         self.rng = np.random.default_rng(semilla)
 
-        # Coordenadas fijas en la reticula (filas, columnas) de cada neurona: shape (filas, columnas, 2)
-        grid_r, grid_c = np.meshgrid(np.arange(self.filas), np.arange(self.columnas), indexing="ij")
-        self.coordenadas_rejilla = np.stack([grid_r, grid_c], axis=-1)  # (filas, columnas, 2)
+        # posicion (fila, columna) de cada neurona en la rejilla, en orden fila-mayor
+        f, c = np.meshgrid(np.arange(self.filas), np.arange(self.columnas), indexing="ij")
+        self.posiciones = np.column_stack([f.ravel(), c.ravel()]).astype(float)
+        self.W = np.zeros((self.n_neuronas, self.dimension))
+        self.instantaneas: list[InstantaneaSOM] = []
+        self.historial_error: list[tuple[int, float]] = []
 
-        # Matriz de pesos W: shape (filas, columnas, n_entradas)
-        self.W = np.zeros((self.filas, self.columnas, self.n_entradas), dtype=float)
+    @property
+    def n_neuronas(self) -> int:
+        return self.filas * self.columnas
 
-        self.historia_ec: list[float] = []  # Error de cuantizacion epoca a epoca
-        self.entrenado = False
+    # -- calendario de parametros -------------------------------------------
+    def _decaimiento(self, inicial: float, final: float, t: int) -> float:
+        """Interpolacion exponencial: inicial en t = 0, final en t = T."""
+        fraccion = t / max(self.iteraciones - 1, 1)
+        return inicial * (final / inicial) ** fraccion
 
-    def inicializar_pesos(self, X: np.ndarray) -> None:
-        """Inicializa los pesos sinapticos cubriendo el rango de los datos."""
+    def eta(self, t: int) -> float:
+        return self._decaimiento(self.eta_inicial, self.eta_final, t)
+
+    def sigma(self, t: int) -> float:
+        return self._decaimiento(self.sigma_inicial, self.sigma_final, t)
+
+    # -- competicion ---------------------------------------------------------
+    def distancias(self, X):
+        """Matriz (N, n_neuronas) de distancias euclideas patron-prototipo."""
         X = np.atleast_2d(np.asarray(X, dtype=float))
-        minimos = X.min(axis=0)
-        maximos = X.max(axis=0)
+        return np.sqrt(((X[:, None, :] - self.W[None, :, :]) ** 2).sum(axis=2))
 
+    def ganadoras(self, X) -> np.ndarray:
+        """Indice de la neurona ganadora (BMU) de cada patron."""
+        return np.argmin(self.distancias(X), axis=1)
+
+    # -- entrenamiento -------------------------------------------------------
+    def _inicializar(self, X) -> None:
         if self.inicializacion == "aleatoria":
-            # Distribucion uniforme en la caja envolvente de X
-            self.W = self.rng.uniform(minimos, maximos, size=(self.filas, self.columnas, self.n_entradas))
-        elif self.inicializacion == "muestreo":
-            # Muestreo aleatorio directo de puntos de datos
-            indices = self.rng.choice(X.shape[0], size=(self.filas, self.columnas), replace=True)
-            self.W = X[indices].copy()
+            idx = self.rng.choice(X.shape[0], size=self.n_neuronas, replace=True)
+            self.W = X[idx].copy() + self.rng.normal(scale=1e-3, size=(self.n_neuronas, self.dimension))
         else:
-            raise ValueError(f"Inicializacion desconocida: {self.inicializacion}")
+            minimo, maximo = X.min(axis=0), X.max(axis=0)
+            u = self.posiciones / np.maximum([self.filas - 1, self.columnas - 1], 1)
+            self.W = minimo[:2] + u * (maximo[:2] - minimo[:2])
 
-    def bmu(self, x: np.ndarray) -> tuple[int, int]:
-        """Encuentra la neurona ganadora (BMU) para un vector x de entrada."""
-        # Distancia euclidea al cuadrado entre x y cada prototipo W[r, c]
-        diff = self.W - x  # (filas, columnas, n_entradas)
-        dist_sq = np.sum(diff ** 2, axis=-1)
-        min_idx = np.argmin(dist_sq)
-        r = min_idx // self.columnas
-        c = min_idx % self.columnas
-        return int(r), int(c)
-
-    def bmu_top2(self, x: np.ndarray) -> tuple[tuple[int, int], tuple[int, int]]:
-        """Encuentra las dos neuronas mas cercanas para el calculo del error topografico."""
-        diff = self.W - x
-        dist_sq = np.sum(diff ** 2, axis=-1).ravel()
-        indices_ordenados = np.argsort(dist_sq)
-
-        idx1, idx2 = indices_ordenados[0], indices_ordenados[1]
-        bmu1 = (int(idx1 // self.columnas), int(idx1 % self.columnas))
-        bmu2 = (int(idx2 // self.columnas), int(idx2 % self.columnas))
-        return bmu1, bmu2
-
-    def propagar(self, X: np.ndarray) -> np.ndarray:
-        """Devuelve las coordenadas BMU (N, 2) de cada patron en X."""
+    def entrenar(self, X, n_instantaneas: int = 6, registrar_cada: int = 0) -> "MapaKohonen":
+        """Entrena el mapa con `iteraciones` presentaciones aleatorias de patrones."""
         X = np.atleast_2d(np.asarray(X, dtype=float))
-        bmus = np.empty((X.shape[0], 2), dtype=int)
-        for i, x in enumerate(X):
-            bmus[i] = self.bmu(x)
-        return bmus
+        self._inicializar(X)
+        momentos = set(np.linspace(0, self.iteraciones - 1, n_instantaneas).astype(int).tolist()) \
+            if n_instantaneas else set()
+        self.instantaneas = [InstantaneaSOM(0, self.W.copy(), self.eta(0), self.sigma(0))]
+        self.historial_error = []
 
-    def error_cuantizacion(self, X: np.ndarray) -> float:
-        """Calcula el Error de Cuantizacion promedio (distancia de cada patron a su BMU)."""
-        X = np.atleast_2d(np.asarray(X, dtype=float))
-        distancias = []
-        for x in X:
-            r, c = self.bmu(x)
-            dist = np.linalg.norm(x - self.W[r, c])
-            distancias.append(dist)
-        return float(np.mean(distancias))
+        for t in range(self.iteraciones):
+            x = X[self.rng.integers(X.shape[0])]
+            c = int(np.argmin(((self.W - x) ** 2).sum(axis=1)))           # 1. competicion
+            d2 = ((self.posiciones - self.posiciones[c]) ** 2).sum(axis=1)
+            s = self.sigma(t)
+            h = np.exp(-d2 / (2.0 * s * s))                                 # 2. cooperacion
+            self.W += self.eta(t) * h[:, None] * (x - self.W)               # 3. adaptacion
 
-    def error_topografico(self, X: np.ndarray) -> float:
-        """Calcula el Error Topografico (fraccion de patrones cuyos 2 mejores BMUs no son vecinos inmediatos)."""
-        X = np.atleast_2d(np.asarray(X, dtype=float))
-        no_vecinos = 0
-        for x in X:
-            (r1, c1), (r2, c2) = self.bmu_top2(x)
-            dist_topologica = abs(r1 - r2) + abs(c1 - c2)  # Distancia Manhattan en reticula
-            if dist_topologica > 1:
-                no_vecinos += 1
-        return float(no_vecinos / X.shape[0])
-
-    def entrenar(self, X: np.ndarray) -> MapaAutoorganizado:
-        """Entrena el Mapa Autoorganizado de forma no supervisada sobre los datos X.
-
-        Parameters
-        ----------
-        X:
-            Matriz de datos (N, D).
-        """
-        X = np.atleast_2d(np.asarray(X, dtype=float))
-        if X.shape[1] != self.n_entradas:
-            raise ValueError(f"X tiene {X.shape[1]} columnas; se esperaban {self.n_entradas}")
-
-        self.inicializar_pesos(X)
-        N = X.shape[0]
-        T = self.max_epocas
-        self.historia_ec = []
-
-        # Registro inicial
-        self.historia_ec.append(self.error_cuantizacion(X))
-
-        for epoca in range(1, T + 1):
-            # Parametros decrecientes exponenciales
-            fraccion = epoca / T
-            eta_t = self.eta_0 * ((self.eta_f / self.eta_0) ** fraccion)
-            sigma_t = self.sigma_0 * ((self.sigma_f / self.sigma_0) ** fraccion)
-            dos_sigma_sq = 2.0 * (sigma_t ** 2)
-
-            # Barajar patrones en cada epoca
-            indices = self.rng.permutation(N)
-
-            for idx in indices:
-                x = X[idx]
-
-                # 1. Competicion: encontrar BMU
-                r_bmu, c_bmu = self.bmu(x)
-
-                # 2. Cooperacion: calcular vecindad gaussiana sobre la reticula
-                dist_rejilla_sq = (
-                    (self.coordenadas_rejilla[..., 0] - r_bmu) ** 2
-                    + (self.coordenadas_rejilla[..., 1] - c_bmu) ** 2
-                )
-                h = np.exp(-dist_rejilla_sq / dos_sigma_sq)  # (filas, columnas)
-
-                # 3. Adaptacion: actualizar pesos
-                influencia = eta_t * h[..., np.newaxis]  # (filas, columnas, 1)
-                self.W += influencia * (x - self.W)
-
-            self.historia_ec.append(self.error_cuantizacion(X))
-
-        self.entrenado = True
+            if t in momentos and t > 0:
+                self.instantaneas.append(InstantaneaSOM(t + 1, self.W.copy(), self.eta(t), s))
+            if registrar_cada and (t % registrar_cada == 0 or t == self.iteraciones - 1):
+                self.historial_error.append((t + 1, self.error_cuantizacion(X)))
         return self
 
-    def matriz_u(self) -> np.ndarray:
-        """Calcula la Unified Distance Matrix (U-Matrix) para visualizar fronteras entre clusters.
+    # -- medidas de calidad --------------------------------------------------
+    def error_cuantizacion(self, X) -> float:
+        """Distancia media de cada patron a su prototipo ganador."""
+        return float(np.mean(np.min(self.distancias(X), axis=1)))
 
-        Para cada neurona (r, c), calcula la distancia euclidea media a sus vecinos contiguos
-        (arriba, abajo, izquierda, derecha y diagonales si estan en el mapa).
+    def error_topografico(self, X) -> float:
+        """Fraccion de patrones cuya 1a y 2a neurona mas cercana NO son vecinas.
+
+        Mide si el mapa preserva la topologia: un valor cercano a 0 indica que
+        patrones proximos en el plano caen en neuronas proximas en la rejilla.
         """
-        U = np.zeros((self.filas, self.columnas), dtype=float)
+        orden = np.argsort(self.distancias(X), axis=1)[:, :2]
+        salto = np.abs(self.posiciones[orden[:, 0]] - self.posiciones[orden[:, 1]]).max(axis=1)
+        return float(np.mean(salto > 1))
 
-        for r in range(self.filas):
-            for c in range(self.columnas):
-                vecinos = []
-                for dr in (-1, 0, 1):
-                    for dc in (-1, 0, 1):
-                        if dr == 0 and dc == 0:
-                            continue
-                        nr, nc = r + dr, c + dc
-                        if 0 <= nr < self.filas and 0 <= nc < self.columnas:
-                            dist = np.linalg.norm(self.W[r, c] - self.W[nr, nc])
-                            vecinos.append(dist)
-                U[r, c] = np.mean(vecinos) if vecinos else 0.0
+    def impactos(self, X) -> np.ndarray:
+        """Numero de patrones ganados por cada neurona, como matriz (filas, columnas)."""
+        conteo = np.bincount(self.ganadoras(X), minlength=self.n_neuronas)
+        return conteo.reshape(self.filas, self.columnas)
 
-        return U
+    def _vecinas(self, j: int) -> list[int]:
+        f, c = divmod(j, self.columnas)
+        res = []
+        for df, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            ff, cc = f + df, c + dc
+            if 0 <= ff < self.filas and 0 <= cc < self.columnas:
+                res.append(ff * self.columnas + cc)
+        return res
 
-    def conteo_activaciones(self, X: np.ndarray) -> np.ndarray:
-        """Devuelve una matriz (filas, columnas) con la frecuencia de aparicion de cada neurona como BMU."""
+    def matriz_u(self) -> np.ndarray:
+        """Distancia media de cada prototipo a los de sus 4 vecinas de rejilla."""
+        U = np.zeros(self.n_neuronas)
+        for j in range(self.n_neuronas):
+            U[j] = np.mean([np.linalg.norm(self.W[j] - self.W[k]) for k in self._vecinas(j)])
+        return U.reshape(self.filas, self.columnas)
+
+    def segmentar(self, X, percentil: float = 50.0, min_fraccion: float = 0.02) -> np.ndarray:
+        """Particion no supervisada del mapa en grupos a partir de la matriz U.
+
+        1. Las neuronas con U por debajo del `percentil` indicado son
+           *interiores* (prototipos rodeados de prototipos cercanos): son los
+           valles de la matriz U.
+        2. Cada componente conexa de neuronas interiores (vecindad de 4 en la
+           rejilla) es un grupo candidato.  Los candidatos que ganan menos de
+           `min_fraccion` de los patrones se descartan (ruido de la frontera).
+        3. Las neuronas restantes --- las crestas de la matriz U --- se asignan
+           al grupo de la neurona interior con prototipo mas cercano.
+
+        Devuelve la etiqueta de grupo (0, 1, ...) de cada neurona.  No usa las
+        clases reales en ningun paso.
+        """
         X = np.atleast_2d(np.asarray(X, dtype=float))
-        conteo = np.zeros((self.filas, self.columnas), dtype=int)
-        for x in X:
-            r, c = self.bmu(x)
-            conteo[r, c] += 1
-        return conteo
+        U = self.matriz_u().ravel()
+        impactos = self.impactos(X).ravel()
+        interior = U < np.percentile(U, percentil)
 
-    def composicion_clusters(self, X: np.ndarray, etiquetas_reales: np.ndarray) -> dict[tuple[int, int], dict[int, int]]:
-        """Mapea cada neurona (r, c) a los clusters reales que la activan (para analisis posterior)."""
-        X = np.atleast_2d(np.asarray(X, dtype=float))
-        y = np.asarray(etiquetas_reales).ravel()
-        composicion: dict[tuple[int, int], dict[int, int]] = {}
+        etiquetas = np.full(self.n_neuronas, -1)
+        grupo = 0
+        for inicio in range(self.n_neuronas):
+            if not interior[inicio] or etiquetas[inicio] >= 0:
+                continue
+            pila = [inicio]
+            etiquetas[inicio] = grupo
+            while pila:
+                j = pila.pop()
+                for k in self._vecinas(j):
+                    if interior[k] and etiquetas[k] < 0:
+                        etiquetas[k] = grupo
+                        pila.append(k)
+            grupo += 1
 
-        for x, etiqueta in zip(X, y):
-            coord = self.bmu(x)
-            if coord not in composicion:
-                composicion[coord] = {}
-            composicion[coord][etiqueta] = composicion[coord].get(etiqueta, 0) + 1
+        # descartar valles con muy pocos patrones y renumerar
+        validos = [g for g in range(grupo) if impactos[etiquetas == g].sum() >= min_fraccion * X.shape[0]]
+        renumerar = {g: n for n, g in enumerate(validos)}
+        etiquetas = np.array([renumerar.get(e, -1) for e in etiquetas])
 
-        return composicion
+        # asignar las crestas al valle mas cercano en el espacio de los datos
+        con_grupo = np.where(etiquetas >= 0)[0]
+        if con_grupo.size == 0:
+            return np.zeros(self.n_neuronas, dtype=int)
+        for j in np.where(etiquetas < 0)[0]:
+            cercana = con_grupo[np.argmin(np.linalg.norm(self.W[con_grupo] - self.W[j], axis=1))]
+            etiquetas[j] = etiquetas[cercana]
+        return etiquetas
+
+    def agrupar(self, X, **kwargs) -> np.ndarray:
+        """Grupo asignado a cada patron: el de su neurona ganadora."""
+        return self.segmentar(X, **kwargs)[self.ganadoras(X)]
+
+    def resumen(self, X=None) -> str:
+        texto = (f"SOM {self.filas}x{self.columnas} ({self.n_neuronas} neuronas) | "
+                 f"eta {self.eta_inicial:g} -> {self.eta_final:g}, "
+                 f"sigma {self.sigma_inicial:g} -> {self.sigma_final:g}, "
+                 f"{self.iteraciones} iteraciones")
+        if X is not None:
+            texto += (f"\nerror de cuantizacion = {self.error_cuantizacion(X):.4f} | "
+                      f"error topografico = {self.error_topografico(X):.3f}")
+        return texto
+
+
+def pureza(grupos_patron, clases) -> float:
+    """Fraccion de patrones cuyo grupo tiene como clase mayoritaria la suya.
+
+    Solo se usa para *evaluar* el agrupamiento a posteriori: las clases reales
+    no intervienen en ningun momento del entrenamiento.
+    """
+    grupos_patron = np.asarray(grupos_patron)
+    clases = np.asarray(clases)
+    aciertos = 0
+    for g in np.unique(grupos_patron):
+        miembros = clases[grupos_patron == g]
+        aciertos += np.bincount(miembros.astype(int)).max()
+    return aciertos / clases.size

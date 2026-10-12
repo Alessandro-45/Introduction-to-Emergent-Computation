@@ -35,9 +35,4 @@ google-services.json
 
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.pytest_cache/
-.coverage
-htmlcov/
-
+*.pyc

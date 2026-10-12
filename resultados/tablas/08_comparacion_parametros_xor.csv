@@ -1,8 +1,0 @@
-Configuracion,eta,alpha (momento),Modo,Epocas,ECM Final,Exactitud,Convergencia
-"eta=0.2, sin momento",0.2,0.0,estocastico,4000,0.007796556560109728,100.0 %,Parcial / Limite
-"eta=0.5, sin momento",0.5,0.0,estocastico,4000,0.0017515307950558125,100.0 %,Parcial / Limite
-"eta=1.0, sin momento",1.0,0.0,estocastico,4000,0.0007483431014548357,100.0 %,Parcial / Limite
-"eta=1.0, momento 0.5 (base)",1.0,0.5,estocastico,4000,0.0003444070143039282,100.0 %,Parcial / Limite
-"eta=1.0, momento 0.9",1.0,0.9,estocastico,2562,9.997412044929437e-05,100.0 %,Si
-"eta=2.0, momento 0.5",2.0,0.5,estocastico,4000,0.0001665261562260753,100.0 %,Parcial / Limite
-"Modo lote (eta=2.0, alpha=0.9)",2.0,0.9,lote,4000,0.0001273455273597846,100.0 %,Parcial / Limite
