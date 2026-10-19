@@ -298,7 +298,6 @@ resultados/        Figuras, tablas CSV e informes generados
 - [06 --- El perceptron multicapa y la retropropagacion](docs/06_perceptron_multicapa.md)
 - [07 --- Mapas autoorganizados de Kohonen](docs/07_kohonen.md)
 - [08 --- La red de Hopfield como memoria asociativa](docs/08_hopfield.md)
-- [09 --- Seminario complementario: Baldi et al. (2014)](docs/09_seminario_investigacion.md)
 - [10 --- Seminario de investigacion (Actividad 6): Hopfield Networks is All You Need](docs/10_seminario_hopfield_moderna.md)
 
 ---
