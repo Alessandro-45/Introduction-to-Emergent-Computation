@@ -1,0 +1,5 @@
+caso,consultas,patrones,d_k,d_v,max_diferencia_absoluta
+proyecciones aleatorias,4,4,42,42,1.7763568394002505e-15
+proyecciones aleatorias,5,26,16,8,0.0
+proyecciones aleatorias,10,100,64,64,4.1033842990145786e-13
+"letras ruidosas, K = V = letras",4,4,42,42,1.1102230246251565e-16

@@ -21,10 +21,10 @@ Version de Python: **3.10 o superior** (se usan anotaciones `X | Y` y `list[T]`)
 ## 2. Como ejecutar todo
 
 ```bash
-# Regenera las figuras, las tablas CSV y los trece informes (~6 min)
+# Regenera las figuras, las tablas CSV y los catorce informes (~7 min)
 python experimentos/ejecutar_todo.py
 
-# Bateria de 43 pruebas (no requiere pytest)
+# Bateria de 49 pruebas (no requiere pytest)
 python pruebas/pruebas.py
 
 # Un experimento suelto
@@ -50,12 +50,13 @@ dos ejecuciones producen exactamente los mismos numeros y las mismas figuras.
 │   ├── perceptron_multicapa.py  MLP con retropropagacion (1986)
 │   ├── kohonen.py             Mapa autoorganizado, no supervisado (1982)
 │   ├── hopfield.py            Memoria asociativa recurrente (1982)
+│   ├── hopfield_moderna.py    Hopfield moderna = atencion (Ramsauer et al., 2021)
 │   ├── imagenes.py            De una foto a la retina bipolar (preprocesamiento)
 │   ├── metricas.py            Exactitud, confusion, ECM, RMSE, R2, margen
 │   ├── visual.py              Diagramas de red, fronteras, curvas, superficies
 │   └── reportes.py            Generador de informes en Markdown
 ├── experimentos/              Scripts ejecutables, uno por estudio
-├── pruebas/pruebas.py         43 pruebas sin dependencias externas
+├── pruebas/pruebas.py         49 pruebas sin dependencias externas
 ├── docs/                      Esta documentacion
 ├── datos/imagenes/            Ejemplos y carpeta para fotos propias
 ├── presentaciones/            Diapositivas (.pptx)
@@ -95,6 +96,7 @@ reporte.escribir()
 | Clases 5-7 (guia, act. 3) | MLP, backpropagation, criterios de parada | `perceptron_multicapa` | 08, 09 |
 | Guia, act. 4 | Aprendizaje no supervisado, Kohonen | `kohonen` | 10 |
 | Guia, act. 5 | Memoria asociativa, Hopfield | `hopfield` | 11 |
+| Guia, act. 6 | Seminario: Hopfield Networks is All You Need | `hopfield_moderna` | 13 |
 
 | Experimento | Pregunta que responde |
 |---|---|
@@ -110,6 +112,8 @@ reporte.escribir()
 | 09 | ¿Como aproxima un MLP una funcion, y cuando hay que parar? |
 | 10 | ¿Descubre un mapa de Kohonen los grupos sin etiquetas? |
 | 11 | ¿Recupera una red de Hopfield letras contaminadas? |
+| 12 | ¿Reconocen las redes fotos reales de letras? |
+| 13 | ¿Cuanto mejora la red de Hopfield moderna a la clasica, y por que es la atencion? |
 
 ---
 
@@ -147,6 +151,7 @@ from ce_rna.hebb import RedHebb
 from ce_rna.perceptron_multicapa import PerceptronMulticapa, gradiente_numerico
 from ce_rna.kohonen import MapaKohonen, pureza
 from ce_rna.hopfield import RedHopfield
+from ce_rna.hopfield_moderna import RedHopfieldModerna, atencion
 ```
 
 `PerceptronMulticapa(capas, razon_aprendizaje, momento, activacion_salida, modo,
@@ -159,6 +164,11 @@ max_epocas, error_objetivo, paciencia)` → `.entrenar(X, d, X_prueba, d_prueba)
 
 `RedHopfield(n, regla="hebb" | "pseudoinversa")` → `.almacenar(P)`, `.recuperar(s0)`,
 `.energia(s)`, `.es_punto_fijo(s)`, `.identificar(s)`, `.solapamientos(s)`.
+
+`RedHopfieldModerna(beta)` → `.almacenar(P)`, `.actualizar(xi)` (un paso:
+`X softmax(beta X^T xi)`), `.recuperar(xi0)`, `.energia(xi)`, `.pesos(xi)`,
+`.separacion()`, `.tipo_punto_fijo(pesos)`, `.identificar(estado)`.
+`atencion(Q, K, V, beta)` calcula `softmax(beta Q K^T) V`.
 
 Todos comparten la misma interfaz basica: `.entrenar(X, d)` (salvo McCulloch-Pitts,
 que no aprende), `.predecir(X)`, `.exactitud(X, d)`, `.resumen()`.
@@ -210,7 +220,7 @@ deficiencia de color, identidad de clase codificada **tambien** por forma de mar
 
 ## 6. Como anadir un experimento nuevo
 
-1. Crear `experimentos/exp12_lo_que_sea.py` empezando por `import _ruta`.
+1. Crear `experimentos/exp14_lo_que_sea.py` empezando por `import _ruta`.
 2. Construir un `Reporte`, ejecutar el estudio, anadir tablas y figuras.
 3. Guardar las figuras en `_ruta.FIGURAS` con `vz.guardar()`.
 4. Llamar a `reporte.escribir()` al final.

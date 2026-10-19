@@ -20,6 +20,8 @@ Modulos
 `perceptron_multicapa`  MLP con retropropagacion del error (1986).
 `kohonen`          Mapa autoorganizado de Kohonen, no supervisado (1982).
 `hopfield`         Red de Hopfield, memoria asociativa (1982).
+`hopfield_moderna` Red de Hopfield moderna y su relacion con la atencion (2021).
+`imagenes`         Imagenes reales -> patrones de 7x6 (preprocesamiento).
 `metricas`         Exactitud, matriz de confusion, ECM, RMSE, R2, margen.
 `visual`           Diagramas de red, fronteras de decision, curvas y superficies.
 `reportes`         Generacion automatica de los informes en Markdown.
@@ -35,9 +37,10 @@ Correspondencia con las clases
 | Clases 5-7 (guia, act. 3) | MLP y backpropagation          | `perceptron_multicapa` |
 | Guia, actividad 4     | Mapas autoorganizados              | `kohonen`         |
 | Guia, actividad 5     | Memoria asociativa                 | `hopfield`        |
+| Guia, actividad 6     | Seminario: Ramsauer et al. (2021)  | `hopfield_moderna` |
 """
 
-from . import (activaciones, adaline, datasets, hebb, hopfield, kohonen, mcculloch_pitts,
+from . import (activaciones, adaline, datasets, hebb, hopfield, hopfield_moderna, kohonen, mcculloch_pitts,
                metricas, perceptron, perceptron_multicapa, reportes, visual)
 
 __version__ = "1.1.0"
@@ -47,6 +50,7 @@ __all__ = [
     "datasets",
     "hebb",
     "hopfield",
+    "hopfield_moderna",
     "kohonen",
     "mcculloch_pitts",
     "metricas",

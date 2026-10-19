@@ -5,7 +5,8 @@ neuronales de la asignatura *Introduccion a la Computacion Emergente*
 (Prof. Esteban Alvarez): la neurona de **McCulloch-Pitts** y las compuertas logicas
 AND y OR, el **perceptron simple** de una capa, el **ADALINE** con la regla Delta, la
 **regla de Hebb**, el **perceptron multicapa** con retropropagacion, los **mapas
-autoorganizados de Kohonen** y la **red de Hopfield**. Cubre las seis actividades de la
+autoorganizados de Kohonen**, la **red de Hopfield** y, para el seminario, la **red de
+Hopfield moderna** de *Hopfield Networks is All You Need*. Cubre las seis actividades de la
 *Evaluacion de Redes Neuronales Artificiales* (ver [tabla de correspondencia](#la-evaluacion-actividad-por-actividad)).
 
 Las unicas dependencias son `numpy`, `pandas` y `matplotlib`. Toda la maquinaria
@@ -14,8 +15,8 @@ diagramas de red --- esta escrita a mano y documentada linea a linea.
 
 ```bash
 python3 -m pip install -r requirements.txt
-python3 experimentos/ejecutar_todo.py     # regenera 71 figuras, 81 tablas y 13 informes (~6 min)
-python3 pruebas/pruebas.py                # 43 pruebas, sin dependencias externas
+python3 experimentos/ejecutar_todo.py     # regenera 79 figuras, 89 tablas y 14 informes (~7 min)
+python3 pruebas/pruebas.py                # 49 pruebas, sin dependencias externas
 ```
 
 ---
@@ -31,6 +32,7 @@ python3 pruebas/pruebas.py                # 43 pruebas, sin dependencias externa
 | **Perceptron multicapa** | 1986 | Capas ocultas sigmoidales entrenadas con **retropropagacion**; resuelve el XOR y aproxima funciones | [`perceptron_multicapa.py`](ce_rna/perceptron_multicapa.py) | [doc 06](docs/06_perceptron_multicapa.md) |
 | **Mapa de Kohonen** | 1982 | Aprendizaje **no supervisado** competitivo con vecindad; descubre grupos | [`kohonen.py`](ce_rna/kohonen.py) | [doc 07](docs/07_kohonen.md) |
 | **Red de Hopfield** | 1982 | **Memoria asociativa** recurrente; recupera imagenes contaminadas | [`hopfield.py`](ce_rna/hopfield.py) | [doc 08](docs/08_hopfield.md) |
+| **Hopfield moderna** | 2021 | Energia log-sum-exp: capacidad exponencial, recuperacion en un paso; su regla **es la atencion** de los Transformers | [`hopfield_moderna.py`](ce_rna/hopfield_moderna.py) | [doc 10](docs/10_seminario_hopfield_moderna.md) |
 
 Los cuatro primeros comparten la misma arquitectura unicapa; lo unico que cambia entre
 ellos es **como se calcula `Δw`**. El perceptron multicapa anade capas ocultas y reparte
@@ -48,17 +50,17 @@ salida deseada y el segundo no clasifica sino que *recuerda*.
 | 3 | Perceptron multicapa: XOR (2-2-1) y aproximacion de funciones | experimentos [08](resultados/reportes/08_mlp_xor.md), [09](resultados/reportes/09_mlp_aproximacion.md) |
 | 4 | Mapas autoorganizados de Kohonen: grupos en el plano | experimento [10](resultados/reportes/10_kohonen.md) |
 | 5 | Red de Hopfield: letras A, B, C, D de 7x6 pixeles con ruido | experimento [11](resultados/reportes/11_hopfield.md) |
-| 6 | Seminario de investigacion sobre un articulo | [docs/09](docs/09_seminario_investigacion.md): Baldi, Sadowski y Whiteson (2014), *Nature Communications* 5, 4308 |
+| 6 | Seminario de investigacion sobre un articulo | [docs/10](docs/10_seminario_hopfield_moderna.md): Ramsauer et al. (2021), *Hopfield Networks is All You Need*, ICLR 2021, con implementacion propia (experimento [13](resultados/reportes/13_hopfield_moderna.md)) |
 | + | Imagenes reales: entrenar y evaluar con fotos | experimento [12](resultados/reportes/12_imagenes_reales.md) |
 
 **Presentaciones** (PowerPoint, con notas para el orador):
 
 - [`presentaciones/01_resultados_evaluacion_rna.pptx`](presentaciones/01_resultados_evaluacion_rna.pptx) --- resultados de las seis actividades y del experimento con imagenes reales (15 diapositivas).
-- [`presentaciones/02_seminario_baldi_2014.pptx`](presentaciones/02_seminario_baldi_2014.pptx) --- presentacion oral del seminario, siguiendo el guion de [docs/09](docs/09_seminario_investigacion.md) (10 diapositivas, ~15 min).
+- [`presentaciones/03_seminario_hopfield_moderna.pptx`](presentaciones/03_seminario_hopfield_moderna.pptx) --- presentacion oral del seminario sobre Ramsauer et al. (2021), siguiendo el guion de [docs/10](docs/10_seminario_hopfield_moderna.md) (12 diapositivas, ~15 min).
 
 ---
 
-## Los trece experimentos
+## Los catorce experimentos
 
 Cada experimento es un script ejecutable que produce figuras, tablas CSV y un informe
 en Markdown **generado automaticamente** a partir de la misma ejecucion que produce
@@ -79,6 +81,7 @@ los numeros.
 | 10 | Mapas de Kohonen | ¿Descubre el mapa los grupos sin que se los digan? | [ver](resultados/reportes/10_kohonen.md) |
 | 11 | Red de Hopfield | ¿Recupera letras contaminadas con ruido, y cuando falla? | [ver](resultados/reportes/11_hopfield.md) |
 | 12 | Imagenes reales | ¿Reconocen las redes fotos de letras, y que hace falta para entrenarlas? | [ver](resultados/reportes/12_imagenes_reales.md) |
+| 13 | Red de Hopfield moderna | ¿Cuanto mejora a la clasica, y por que es la atencion de los Transformers? | [ver](resultados/reportes/13_hopfield_moderna.md) |
 
 ---
 
@@ -177,6 +180,20 @@ pureza ≈ 0.99, sin haber visto ninguna etiqueta.
 Las cuatro letras de 7x6 son atractores; con 8 de 42 pixeles invertidos la red recupera
 la letra correcta en ~87 % de los casos.
 
+### Hopfield moderna: la memoria asociativa que es una capa de atencion
+
+<p align="center">
+  <img src="resultados/figuras/13_capacidad.png" width="47%">
+  <img src="resultados/figuras/13_regimenes_beta.png" width="47%">
+</p>
+
+La regla `ξ ← X softmax(β Xᵀξ)` de Ramsauer et al. (2021) recupera las letras en **una
+sola actualizacion**, tolera tanto ruido como el vecino mas cercano y guarda las 26
+letras del alfabeto (la clasica no guarda ni una) y miles de patrones aleatorios en 42
+dimensiones. β decide si la red promedia todo, mezcla un grupo de patrones (estado
+metaestable) o recuerda uno solo. Y la regla coincide con `softmax(QKᵀ/√d_k)V` hasta el
+redondeo: es la atencion de los Transformers.
+
 ### Imagenes reales: de la foto a la retina, y a una red entrenada
 
 <p align="center">
@@ -263,8 +280,8 @@ la version habitual de los manuales:
 
 ```
 ce_rna/            El paquete: modelos, metricas, figuras e informes
-experimentos/      Trece scripts ejecutables, uno por estudio
-pruebas/           43 pruebas de propiedades matematicas, sin pytest
+experimentos/      Catorce scripts ejecutables, uno por estudio
+pruebas/           49 pruebas de propiedades matematicas, sin pytest
 docs/              Documentacion teorica y de la API
 datos/imagenes/    Imagenes de ejemplo y carpeta para fotos propias
 presentaciones/    Diapositivas de resultados y del seminario (.pptx)
@@ -281,7 +298,8 @@ resultados/        Figuras, tablas CSV e informes generados
 - [06 --- El perceptron multicapa y la retropropagacion](docs/06_perceptron_multicapa.md)
 - [07 --- Mapas autoorganizados de Kohonen](docs/07_kohonen.md)
 - [08 --- La red de Hopfield como memoria asociativa](docs/08_hopfield.md)
-- [09 --- Seminario de investigacion (Actividad 6)](docs/09_seminario_investigacion.md)
+- [09 --- Seminario complementario: Baldi et al. (2014)](docs/09_seminario_investigacion.md)
+- [10 --- Seminario de investigacion (Actividad 6): Hopfield Networks is All You Need](docs/10_seminario_hopfield_moderna.md)
 
 ---
 
@@ -324,10 +342,13 @@ La bateria de [`pruebas/pruebas.py`](pruebas/pruebas.py) comprueba propiedades
 - el mapa de Kohonen separa los cinco grupos y preserva la topologia;
 - las letras son puntos fijos de la red de Hopfield y la energia nunca aumenta;
 - el preprocesamiento de imagenes da una retina bipolar independiente de la posicion de
-  la letra en la foto y de su polaridad (tinta oscura o clara).
+  la letra en la foto y de su polaridad (tinta oscura o clara);
+- la actualizacion de la red de Hopfield moderna coincide con la atencion, recupera las
+  letras en un paso, nunca sube la energia, pasa de promediar a recordar al subir β y
+  guarda 30 patrones aleatorios donde Hebb no guarda ninguno.
 
 ```
-43 de 43 pruebas superadas
+49 de 49 pruebas superadas
 ```
 
 ---

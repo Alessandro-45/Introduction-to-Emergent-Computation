@@ -17,7 +17,9 @@ solo que el codigo no reviente:
 * que las derivadas de las activaciones coincidan con sus diferencias finitas,
 * que la retropropagacion del MLP coincida con el gradiente numerico y resuelva el XOR,
 * que el mapa de Kohonen ordene la rejilla y separe grupos bien definidos,
-* que la red de Hopfield almacene sus patrones como puntos fijos y nunca suba la energia.
+* que la red de Hopfield almacene sus patrones como puntos fijos y nunca suba la energia,
+* que la red de Hopfield moderna recupere en un paso, nunca suba la energia y que su
+  regla de actualizacion coincida con la atencion de los Transformers.
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ from ce_rna import metricas as mt
 from ce_rna.adaline import (Adaline, ecm_de_pesos, solucion_minimos_cuadrados)
 from ce_rna.hebb import RedHebb
 from ce_rna.hopfield import RedHopfield
+from ce_rna.hopfield_moderna import RedHopfieldModerna, atencion, lse
 from ce_rna.kohonen import MapaKohonen, pureza
 from ce_rna.mcculloch_pitts import (NeuronaMCP, neurona_and, neurona_nand,
                                     neurona_nor, neurona_not, neurona_or,
@@ -431,6 +434,66 @@ def probar_preprocesar_invariante_a_posicion_y_polaridad():
     # la foto mayor se reduce a 256 px de lado: se admite algun pixel de diferencia
     assert np.sum(imagenes.preprocesar(lienzo) != base) <= 2
     assert np.array_equal(imagenes.preprocesar(ImageOps.invert(letra)), base)
+
+
+# ---------------------------------------------------------------------------
+# Hopfield moderna (Ramsauer et al., 2021)
+# ---------------------------------------------------------------------------
+
+def probar_moderna_actualizacion_es_atencion():
+    """X softmax(beta X^T xi) aplicada a varias consultas = softmax(beta Q K^T) V con K = V = X."""
+    rng = np.random.default_rng(0)
+    X, Q = rng.normal(size=(7, 5)), rng.normal(size=(3, 5))
+    red = RedHopfieldModerna(beta=0.8).almacenar(X)
+    assert np.allclose(atencion(Q, X, X, beta=0.8), [red.actualizar(q) for q in Q])
+
+
+def probar_moderna_lse_es_maximo_suave():
+    z = np.array([1.0, 3.0, -2.0, 2.5])
+    for beta in (0.1, 1.0, 10.0):
+        assert z.max() <= lse(z, beta) <= z.max() + np.log(z.size) / beta + 1e-12
+    assert np.isfinite(lse(np.array([1000.0, 999.0]), 5.0))
+
+
+def probar_moderna_recupera_letras_en_un_paso():
+    letras = ds.letras_abcd("gruesa").X
+    red = RedHopfieldModerna(beta=0.5).almacenar(letras)
+    for mu, patron in enumerate(letras):
+        uno = red.actualizar(ds.contaminar(patron, 8, semilla=mu))
+        assert red.identificar(uno) == (mu, "patron")
+        assert np.linalg.norm(uno - patron) < 1e-2  # punto fijo *cerca* del patron, no sobre el
+
+
+def probar_moderna_energia_no_aumenta():
+    rng = np.random.default_rng(1)
+    X = rng.choice([-1.0, 1.0], size=(30, 42))
+    for beta in (0.01, 0.1, 0.3, 2.0):
+        res = RedHopfieldModerna(beta=beta).almacenar(X).recuperar(rng.normal(size=42), max_iteraciones=300)
+        assert np.all(np.diff(res.energia) <= 1e-9)
+        assert min(res.energia) >= -1e-9  # el paper acota 0 <= E <= 2 M^2
+
+
+def probar_moderna_regimenes_de_beta():
+    """beta -> 0: media de todos los patrones; beta grande: el patron mas parecido."""
+    letras = ds.letras_abcd("gruesa").X
+    x = ds.contaminar(letras[2], 4, semilla=9)
+    fria = RedHopfieldModerna(beta=1e-6).almacenar(letras)
+    assert np.allclose(fria.actualizar(x), letras.mean(axis=0), atol=1e-3)
+    assert fria.tipo_punto_fijo(fria.pesos(x)) == "global"
+    caliente = RedHopfieldModerna(beta=5.0).almacenar(letras)
+    assert caliente.tipo_punto_fijo(caliente.pesos(x)) == "unico"
+
+
+def probar_moderna_supera_capacidad_clasica():
+    """30 patrones aleatorios en 42 dimensiones: Hebb no recupera ninguno, la moderna todos."""
+    rng = np.random.default_rng(2)
+    X = rng.choice([-1.0, 1.0], size=(30, 42))
+    clasica = RedHopfield(42).almacenar(X)
+    moderna = RedHopfieldModerna(beta=0.5).almacenar(X)
+    for mu in range(X.shape[0]):
+        x = ds.contaminar(X[mu], 4, semilla=mu)
+        assert moderna.identificar(moderna.recuperar(x).estado) == (mu, "patron")
+    assert not any(clasica.es_punto_fijo(p) for p in X)
 
 
 # ---------------------------------------------------------------------------
